@@ -4,7 +4,7 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { localize, localize2 } from '../../../../../nls.js';
-import { DisposableStore } from '../../../../../base/common/lifecycle.js';
+import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
 import { IContextKey, IContextKeyService, RawContextKey, ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { Action2, registerAction2, MenuId } from '../../../../../platform/actions/common/actions.js';
@@ -24,9 +24,10 @@ import { ChatContextKeys } from '../../../chat/common/actions/chatContextKeys.js
 
 import { BrowserEditor, BrowserEditorContribution, CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR } from '../browserEditor.js';
 import { BROWSER_EDITOR_ACTIVE, BrowserActionCategory } from '../browserViewActions.js';
-import { IBrowserViewModel } from '../../common/browserView.js';
+import { IBrowserViewCDPService, IBrowserViewModel } from '../../common/browserView.js';
 import { IBrowserAnnotation, BrowserAnnotationDetailLevel, createBrowserAnnotation } from '../../common/browserAnnotation.js';
 import { generateAnnotationOutput } from '../browserAnnotationOutput.js';
+import { BrowserAnnotationMarkers } from '../browserAnnotationMarkers.js';
 
 // -- Context Keys ----------------------------------------------------------
 
@@ -56,6 +57,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 	private readonly _annotationModeContext: IContextKey<boolean>;
 	private readonly _hasAnnotationsContext: IContextKey<boolean>;
+	private readonly _markers = this._register(new MutableDisposable<BrowserAnnotationMarkers>());
 
 	constructor(
 		editor: BrowserEditor,
@@ -65,6 +67,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		@IClipboardService private readonly clipboardService: IClipboardService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@INotificationService private readonly notificationService: INotificationService,
+		@IBrowserViewCDPService private readonly cdpService: IBrowserViewCDPService,
 	) {
 		super(editor);
 		this._annotationModeContext = CONTEXT_BROWSER_ANNOTATION_MODE_ACTIVE.bindTo(contextKeyService);
@@ -72,8 +75,14 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	protected override subscribeToModel(model: IBrowserViewModel, store: DisposableStore): void {
-		// When the page navigates, exit annotation mode (annotations are page-specific)
+		// Create markers instance for this browser view
+		const markers = new BrowserAnnotationMarkers(model.id, this.cdpService, this.logService);
+		this._markers.value = markers;
+		store.add(markers);
+
+		// When the page navigates, exit annotation mode and clear markers
 		store.add(model.onDidNavigate(() => {
+			markers.resetInjectionState();
 			if (this._annotationModeActive) {
 				this._stopAnnotationMode();
 			}
@@ -161,6 +170,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 				(this._annotations[i] as { index: number }).index = i + 1;
 			}
 			this._updateHasAnnotationsContext();
+			this._syncMarkers();
 		}
 	}
 
@@ -257,6 +267,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 				);
 				this._annotations.push(annotation);
 				this._updateHasAnnotationsContext();
+				this._syncMarkers();
 
 				this.logService.debug(`BrowserAnnotationFeature: Added annotation #${annotation.index} for ${annotation.displayName}`);
 
@@ -277,9 +288,14 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		}
 	}
 
+	private _syncMarkers(): void {
+		this._markers.value?.updateMarkers(this._annotations);
+	}
+
 	private _clearAnnotations(): void {
 		this._annotations.length = 0;
 		this._updateHasAnnotationsContext();
+		this._markers.value?.clearMarkers();
 	}
 
 	private _updateHasAnnotationsContext(): void {
