@@ -1,0 +1,81 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+/* Ensure floating toolbar can position relative to browser root */
+.browser-root {
+	position: relative;
+}
+
+.browser-annotation-toolbar {
+	position: absolute;
+	bottom: 16px;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: 10;
+	display: none;
+	align-items: center;
+	gap: 2px;
+	padding: 4px 6px;
+	border-radius: 8px;
+	background-color: var(--vscode-editorWidget-background);
+	border: 1px solid var(--vscode-editorWidget-border, var(--vscode-contrastBorder, transparent));
+	box-shadow: 0 2px 8px var(--vscode-widget-shadow);
+	pointer-events: auto;
+
+	&.visible {
+		display: flex;
+	}
+}
+
+.browser-annotation-toolbar .browser-annotation-toolbar-button {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--vscode-editorWidget-foreground);
+	cursor: pointer;
+	padding: 0;
+	outline: none !important;
+
+	&:hover {
+		background-color: var(--vscode-toolbar-hoverBackground);
+	}
+
+	&:focus-visible {
+		outline: 1px solid var(--vscode-focusBorder) !important;
+		outline-offset: -1px !important;
+	}
+
+	&.active {
+		color: var(--vscode-textLink-foreground);
+		background-color: var(--vscode-toolbar-hoverBackground);
+	}
+
+	.codicon {
+		font-size: 16px;
+	}
+}
+
+.browser-annotation-toolbar .browser-annotation-toolbar-separator {
+	width: 1px;
+	height: 18px;
+	background-color: var(--vscode-editorWidget-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.2)));
+	margin: 0 4px;
+	flex-shrink: 0;
+}
+
+.browser-annotation-toolbar .browser-annotation-toolbar-count {
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--vscode-descriptionForeground);
+	padding: 0 6px;
+	white-space: nowrap;
+	user-select: none;
+	-webkit-user-select: none;
+}

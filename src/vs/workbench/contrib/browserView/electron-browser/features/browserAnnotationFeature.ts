@@ -3,11 +3,14 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
+import '../media/browserAnnotationToolbar.css';
+
 import { localize, localize2 } from '../../../../../nls.js';
 import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
+import { $, addDisposableListener } from '../../../../../base/browser/dom.js';
 import { IContextKey, IContextKeyService, RawContextKey, ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
-import { Action2, registerAction2, MenuId } from '../../../../../platform/actions/common/actions.js';
+import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
 import { KeybindingWeight } from '../../../../../platform/keybinding/common/keybindingsRegistry.js';
 import { KeyCode } from '../../../../../base/common/keyCodes.js';
@@ -59,6 +62,15 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private readonly _hasAnnotationsContext: IContextKey<boolean>;
 	private readonly _markers = this._register(new MutableDisposable<BrowserAnnotationMarkers>());
 
+	// Floating toolbar DOM
+	private readonly _toolbarElement: HTMLElement;
+	private readonly _toggleBtn: HTMLButtonElement;
+	private readonly _copyBtn: HTMLButtonElement;
+	private readonly _sendToChatBtn: HTMLButtonElement;
+	private readonly _manageBtn: HTMLButtonElement;
+	private readonly _clearBtn: HTMLButtonElement;
+	private readonly _countLabel: HTMLElement;
+
 	constructor(
 		editor: BrowserEditor,
 		@IContextKeyService contextKeyService: IContextKeyService,
@@ -72,6 +84,42 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		super(editor);
 		this._annotationModeContext = CONTEXT_BROWSER_ANNOTATION_MODE_ACTIVE.bindTo(contextKeyService);
 		this._hasAnnotationsContext = CONTEXT_BROWSER_HAS_ANNOTATIONS.bindTo(contextKeyService);
+
+		// Build floating toolbar
+		this._toolbarElement = $('.browser-annotation-toolbar');
+
+		this._toggleBtn = this._createButton('codicon-checklist', localize('browser.annotateToggle', "Toggle Annotation Mode"));
+		this._toolbarElement.appendChild(this._toggleBtn);
+		this._register(addDisposableListener(this._toggleBtn, 'click', () => this.toggleAnnotationMode()));
+
+		this._toolbarElement.appendChild(this._createSeparator());
+		this._countLabel = $('.browser-annotation-toolbar-count');
+		this._countLabel.style.display = 'none';
+		this._toolbarElement.appendChild(this._countLabel);
+
+		this._manageBtn = this._createButton('codicon-list-ordered', localize('browser.annotateManage', "Manage Annotations"));
+		this._manageBtn.style.display = 'none';
+		this._toolbarElement.appendChild(this._manageBtn);
+		this._register(addDisposableListener(this._manageBtn, 'click', () => this.manageAnnotations()));
+
+		this._copyBtn = this._createButton('codicon-copy', localize('browser.annotateCopy', "Copy Annotations"));
+		this._copyBtn.style.display = 'none';
+		this._toolbarElement.appendChild(this._copyBtn);
+		this._register(addDisposableListener(this._copyBtn, 'click', () => this.copyAnnotations()));
+
+		this._sendToChatBtn = this._createButton('codicon-comment-discussion', localize('browser.annotateSendToChat', "Send to Chat"));
+		this._sendToChatBtn.style.display = 'none';
+		this._toolbarElement.appendChild(this._sendToChatBtn);
+		this._register(addDisposableListener(this._sendToChatBtn, 'click', () => this.sendAnnotationsToChat()));
+
+		this._clearBtn = this._createButton('codicon-clear-all', localize('browser.annotateClear', "Clear All"));
+		this._clearBtn.style.display = 'none';
+		this._toolbarElement.appendChild(this._clearBtn);
+		this._register(addDisposableListener(this._clearBtn, 'click', () => this.clearAnnotations()));
+	}
+
+	override get toolbarElements(): readonly HTMLElement[] {
+		return [this._toolbarElement];
 	}
 
 	protected override subscribeToModel(model: IBrowserViewModel, store: DisposableStore): void {
@@ -284,6 +332,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 		this._annotationModeActive = true;
 		this._annotationModeContext.set(true);
+		this._updateToolbarUI();
 		this.editor.ensureBrowserFocus();
 
 		this.logService.debug('BrowserAnnotationFeature: Annotation mode started');
@@ -295,6 +344,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private _stopAnnotationMode(): void {
 		this._annotationModeActive = false;
 		this._annotationModeContext.set(false);
+		this._updateToolbarUI();
 
 		if (this._currentCts) {
 			this._currentCts.dispose(true);
@@ -392,7 +442,42 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	private _updateHasAnnotationsContext(): void {
-		this._hasAnnotationsContext.set(this._annotations.length > 0);
+		const hasAnnotations = this._annotations.length > 0;
+		this._hasAnnotationsContext.set(hasAnnotations);
+		this._updateToolbarUI();
+	}
+
+	private _updateToolbarUI(): void {
+		const hasAnnotations = this._annotations.length > 0;
+		const showToolbar = this._annotationModeActive || hasAnnotations;
+
+		this._toolbarElement.classList.toggle('visible', showToolbar);
+		this._toggleBtn.classList.toggle('active', this._annotationModeActive);
+
+		// Show/hide annotation-dependent buttons
+		const annotationDisplay = hasAnnotations ? '' : 'none';
+		this._countLabel.style.display = annotationDisplay;
+		this._countLabel.textContent = `${this._annotations.length}`;
+		this._manageBtn.style.display = annotationDisplay;
+		this._copyBtn.style.display = annotationDisplay;
+		this._sendToChatBtn.style.display = annotationDisplay;
+		this._clearBtn.style.display = annotationDisplay;
+	}
+
+	private _createButton(iconClass: string, title: string): HTMLButtonElement {
+		const btn = document.createElement('button');
+		btn.className = 'browser-annotation-toolbar-button';
+		btn.title = title;
+		const icon = document.createElement('span');
+		icon.className = `codicon ${iconClass}`;
+		btn.appendChild(icon);
+		return btn;
+	}
+
+	private _createSeparator(): HTMLElement {
+		const sep = document.createElement('div');
+		sep.className = 'browser-annotation-toolbar-separator';
+		return sep;
 	}
 }
 
@@ -417,12 +502,6 @@ class ToggleAnnotationModeAction extends Action2 {
 			f1: true,
 			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR.negate(), enabled),
 			toggled: CONTEXT_BROWSER_ANNOTATION_MODE_ACTIVE,
-			menu: {
-				id: MenuId.BrowserActionsToolbar,
-				group: 'actions',
-				order: 3,
-				when: enabled
-			},
 		});
 	}
 
@@ -445,12 +524,6 @@ class CopyAnnotationsAction extends Action2 {
 			icon: Codicon.copy,
 			f1: true,
 			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_HAS_ANNOTATIONS),
-			menu: {
-				id: MenuId.BrowserActionsToolbar,
-				group: 'actions',
-				order: 4,
-				when: CONTEXT_BROWSER_HAS_ANNOTATIONS
-			},
 		});
 	}
 
@@ -473,12 +546,6 @@ class SendAnnotationsToChatAction extends Action2 {
 			icon: Codicon.commentDiscussion,
 			f1: true,
 			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_HAS_ANNOTATIONS, ChatContextKeys.enabled),
-			menu: {
-				id: MenuId.BrowserActionsToolbar,
-				group: 'actions',
-				order: 5,
-				when: CONTEXT_BROWSER_HAS_ANNOTATIONS,
-			},
 		});
 	}
 
