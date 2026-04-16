@@ -175,6 +175,99 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	/**
+	 * Show a quick pick to manage annotations (edit comment, delete, or clear all).
+	 */
+	async manageAnnotations(): Promise<void> {
+		if (this._annotations.length === 0) {
+			return;
+		}
+
+		interface IAnnotationQuickPickItem {
+			label: string;
+			description: string;
+			annotationId?: string;
+			action: 'edit' | 'delete' | 'clearAll';
+		}
+
+		const items: (IAnnotationQuickPickItem | { type: 'separator'; label?: string })[] = this._annotations.map(a => ({
+			label: `$(list-ordered) #${a.index} ${a.displayName}`,
+			description: a.comment.length > 60 ? a.comment.slice(0, 60) + '...' : a.comment,
+			annotationId: a.id,
+			action: 'edit' as const,
+		}));
+
+		items.push(
+			{ type: 'separator' },
+			{ label: `$(trash) ${localize('browser.clearAllAnnotations', "Clear All Annotations")}`, description: '', action: 'clearAll' },
+		);
+
+		const picked = await this.quickInputService.pick(items, {
+			title: localize('browser.manageAnnotationsTitle', "Manage Annotations"),
+			placeHolder: localize('browser.manageAnnotationsPlaceholder', "Select an annotation to edit or delete"),
+		}) as IAnnotationQuickPickItem | undefined;
+
+		if (!picked) {
+			return;
+		}
+
+		if (picked.action === 'clearAll') {
+			this._clearAnnotations();
+			return;
+		}
+
+		if (picked.annotationId) {
+			await this._editOrDeleteAnnotation(picked.annotationId);
+		}
+	}
+
+	private async _editOrDeleteAnnotation(annotationId: string): Promise<void> {
+		const annotation = this._annotations.find(a => a.id === annotationId);
+		if (!annotation) {
+			return;
+		}
+
+		const editLabel = localize('browser.editAnnotationComment', "Edit Comment");
+		const deleteLabel = localize('browser.deleteAnnotation', "Delete Annotation");
+
+		const action = await this.quickInputService.pick([
+			{ label: `$(edit) ${editLabel}`, action: 'edit' },
+			{ label: `$(trash) ${deleteLabel}`, action: 'delete' },
+		] as Array<{ label: string; action: string }>, {
+			title: localize('browser.annotationAction', "#{0} {1}", annotation.index, annotation.displayName),
+		}) as { label: string; action: string } | undefined;
+
+		if (!action) {
+			return;
+		}
+
+		if (action.action === 'delete') {
+			this.deleteAnnotation(annotationId);
+			return;
+		}
+
+		if (action.action === 'edit') {
+			const newComment = await this.quickInputService.input({
+				title: localize('browser.editAnnotation', "Edit Annotation #{0}", annotation.index),
+				value: annotation.comment,
+				validateInput: async (value) => {
+					if (!value.trim()) {
+						return localize('browser.annotationCommentRequired', "A comment is required");
+					}
+					return undefined;
+				}
+			});
+
+			if (newComment !== undefined && newComment.trim()) {
+				const idx = this._annotations.findIndex(a => a.id === annotationId);
+				if (idx !== -1) {
+					(this._annotations[idx] as { comment: string }).comment = newComment;
+					this._syncMarkers();
+				}
+			}
+		}
+	}
+
+	/**
 	 * Get the current annotations.
 	 */
 	getAnnotations(): readonly IBrowserAnnotation[] {
@@ -380,6 +473,12 @@ class SendAnnotationsToChatAction extends Action2 {
 			icon: Codicon.commentDiscussion,
 			f1: true,
 			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_HAS_ANNOTATIONS, ChatContextKeys.enabled),
+			menu: {
+				id: MenuId.BrowserActionsToolbar,
+				group: 'actions',
+				order: 5,
+				when: CONTEXT_BROWSER_HAS_ANNOTATIONS,
+			},
 		});
 	}
 
@@ -444,3 +543,27 @@ registerAction2(CopyAnnotationsAction);
 registerAction2(SendAnnotationsToChatAction);
 registerAction2(ClearAnnotationsAction);
 registerAction2(ExitAnnotationModeAction);
+
+class ManageAnnotationsAction extends Action2 {
+	static readonly ID = 'workbench.action.browser.manageAnnotations';
+
+	constructor() {
+		super({
+			id: ManageAnnotationsAction.ID,
+			title: localize2('browser.manageAnnotationsAction', 'Manage Annotations'),
+			category: BrowserActionCategory,
+			icon: Codicon.listOrdered,
+			f1: true,
+			precondition: ContextKeyExpr.and(BROWSER_EDITOR_ACTIVE, CONTEXT_BROWSER_HAS_ANNOTATIONS),
+		});
+	}
+
+	async run(accessor: ServicesAccessor): Promise<void> {
+		const browserEditor = accessor.get(IEditorService).activeEditorPane;
+		if (browserEditor instanceof BrowserEditor) {
+			await browserEditor.getContribution(BrowserAnnotationFeature)?.manageAnnotations();
+		}
+	}
+}
+
+registerAction2(ManageAnnotationsAction);
