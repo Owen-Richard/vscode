@@ -128,6 +128,9 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._markers.value = markers;
 		store.add(markers);
 
+		// Show the toolbar when a page is loaded
+		this._updateToolbarUI();
+
 		// When the page navigates, exit annotation mode and clear markers
 		store.add(model.onDidNavigate(() => {
 			markers.resetInjectionState();
@@ -141,6 +144,8 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	override clear(): void {
 		this._stopAnnotationMode();
 		this._clearAnnotations();
+		// Hide toolbar when model is cleared
+		this._toolbarElement.classList.remove('visible');
 	}
 
 	// -- Public API (called from actions) ----------------------------------
@@ -448,10 +453,11 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	private _updateToolbarUI(): void {
+		const hasModel = !!this.editor.model?.url;
 		const hasAnnotations = this._annotations.length > 0;
-		const showToolbar = this._annotationModeActive || hasAnnotations;
 
-		this._toolbarElement.classList.toggle('visible', showToolbar);
+		// Always show the toolbar when a page is loaded
+		this._toolbarElement.classList.toggle('visible', hasModel);
 		this._toggleBtn.classList.toggle('active', this._annotationModeActive);
 
 		// Show/hide annotation-dependent buttons
