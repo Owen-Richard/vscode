@@ -131,7 +131,21 @@ const MARKER_INJECTION_SCRIPT = `
 
 	function updateMarkers(annotations) {
 		ensureStyles();
-		const container = ensureContainer();
+		_currentAnnotations = annotations;
+		renderMarkers();
+		if (!_resizeListenerActive) {
+			window.addEventListener('resize', renderMarkers);
+			window.addEventListener('scroll', renderMarkers);
+			_resizeListenerActive = true;
+		}
+	}
+
+	var _currentAnnotations = [];
+	var _resizeListenerActive = false;
+
+	function renderMarkers() {
+		var annotations = _currentAnnotations;
+		var container = ensureContainer();
 		container.innerHTML = '';
 
 		for (const annotation of annotations) {
@@ -163,6 +177,7 @@ const MARKER_INJECTION_SCRIPT = `
 	}
 
 	function clearMarkers() {
+		_currentAnnotations = [];
 		const container = document.getElementById(CONTAINER_ID);
 		if (container) {
 			container.innerHTML = '';
@@ -170,6 +185,12 @@ const MARKER_INJECTION_SCRIPT = `
 	}
 
 	function removeAll() {
+		_currentAnnotations = [];
+		if (_resizeListenerActive) {
+			window.removeEventListener('resize', renderMarkers);
+			window.removeEventListener('scroll', renderMarkers);
+			_resizeListenerActive = false;
+		}
 		const container = document.getElementById(CONTAINER_ID);
 		if (container) container.remove();
 		const style = document.getElementById(STYLE_ID);
