@@ -263,7 +263,13 @@ const TEXT_TAGS = new Set(['P','SPAN','H1','H2','H3','H4','H5','H6','LI','TD','T
 'FIGCAPTION','CAPTION','PRE','CODE','EM','STRONG','B','I','U','S','A','TIME','ADDRESS','CITE','Q','MARK','SMALL','SUB','SUP']);
 const MEANINGFUL_SELECTOR = 'button,a,input,img,p,h1,h2,h3,h4,h5,h6,li,label,td,th,section,article,aside,nav';
 
-function isOurs(el) { return el && el.id && el.id.startsWith('__vscode-annotation'); }
+function isOurs(el) {
+if (!el) return false;
+if (el.id && el.id.startsWith('__vscode-annotation')) return true;
+if (el.className && typeof el.className === 'string' && el.className.indexOf('__vscode-annotation') >= 0) return true;
+if (el.closest && el.closest('[id^="__vscode-annotation"]')) return true;
+return false;
+}
 function isSkip(el) { return !el || isOurs(el) || el === document.body || el === document.documentElement; }
 
 let highlight = null, tooltip = null, dragRect = null;
