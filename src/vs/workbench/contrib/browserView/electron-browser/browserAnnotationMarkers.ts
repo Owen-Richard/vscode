@@ -461,29 +461,32 @@ popupSelectedText = selectedText;
 popupEl = document.createElement('div');
 popupEl.id = HOVER_ID + '-popup';
 var headerText = elementName.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-var quoteHtml = selectedText ? '<div style="font-size:12px;font-style:italic;color:rgba(255,255,255,0.5);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">&ldquo;' + selectedText.slice(0,60).replace(/</g,'&lt;') + (selectedText.length>60?'...':'') + '&rdquo;</div>' : '';
+var quoteHtml = selectedText ? '<div style="font-size:11px;font-style:italic;color:rgba(204,204,204,0.6);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4;">&ldquo;' + selectedText.slice(0,60).replace(/</g,'&lt;') + (selectedText.length>60?'...':'') + '&rdquo;</div>' : '';
 
 popupEl.innerHTML = [
-'<div style="display:flex;align-items:center;margin-bottom:8px;">',
-'  <span style="font-size:12px;color:rgba(255,255,255,0.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span>',
+'<div style="display:flex;align-items:center;margin-bottom:6px;">',
+'  <span style="font-size:11px;line-height:1.4;color:rgba(204,204,204,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span>',
 '</div>',
 quoteHtml,
 '<textarea id="' + HOVER_ID + '-ta" rows="2" placeholder="What should change?" style="',
-'  width:100%;box-sizing:border-box;padding:8px 10px;font-size:13px;font-family:inherit;',
-'  background:rgba(255,255,255,0.05);color:#fff;border:1px solid rgba(255,255,255,0.15);',
-'  border-radius:8px;resize:none;outline:none;"></textarea>',
-'<div style="display:flex;justify-content:flex-end;gap:6px;margin-top:10px;">',
-'  <button id="'+HOVER_ID+'-cancel" style="padding:6px 14px;font-size:12px;font-weight:500;border-radius:16px;border:none;background:transparent;color:rgba(255,255,255,0.5);cursor:pointer;font-family:inherit;">Cancel</button>',
-'  <button id="'+HOVER_ID+'-submit" style="padding:6px 14px;font-size:12px;font-weight:500;border-radius:16px;border:none;background:#0078d4;color:#fff;cursor:pointer;opacity:0.4;font-family:inherit;">Add</button>',
+'  width:100%;box-sizing:border-box;padding:4px 6px;font-size:13px;line-height:1.4;font-family:inherit;',
+'  background:#3c3c3c;color:#ccc;border:1px solid #3c3c3c;',
+'  border-radius:4px;resize:none;outline:none;"></textarea>',
+'<div style="display:flex;justify-content:flex-end;gap:4px;margin-top:8px;">',
+'  <button id="'+HOVER_ID+'-cancel" style="padding:4px 8px;font-size:12px;line-height:16px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#ccc;cursor:pointer;font-family:inherit;">Cancel</button>',
+'  <button id="'+HOVER_ID+'-submit" style="padding:4px 8px;font-size:12px;line-height:16px;border-radius:4px;border:1px solid transparent;background:#0078d4;color:#fff;cursor:pointer;opacity:0.4;font-family:inherit;">Add</button>',
 '</div>',
 ].join('');
 
 Object.assign(popupEl.style, {
-position:'fixed', left:Math.max(150,Math.min(x,window.innerWidth-150))+'px',
-top:Math.min(y,window.innerHeight-200)+'px', transform:'translateX(-50%)',
-width:'280px', padding:'12px 16px 14px', background:'#1a1a1a', borderRadius:'16px',
-boxShadow:'0 4px 24px rgba(0,0,0,0.3),0 0 0 1px rgba(255,255,255,0.08)',
-zIndex:'2147483647', fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+position:'fixed', left:Math.max(140,Math.min(x,window.innerWidth-140))+'px',
+top:Math.min(y,window.innerHeight-180)+'px', transform:'translateX(-50%)',
+width:'264px', padding:'8px', background:'#252526', borderRadius:'8px',
+border:'1px solid #454545',
+boxShadow:'0 0 20px rgba(0,0,0,0.15)',
+zIndex:'2147483647',
+fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe WPC","Segoe UI",system-ui,"Ubuntu","Droid Sans",sans-serif',
+fontSize:'13px', lineHeight:'1.4em',
 animation:'__ah_pop 0.2s ease-out forwards',
 });
 document.body.appendChild(popupEl);
@@ -493,8 +496,8 @@ var sub = document.getElementById(HOVER_ID+'-submit');
 var can = document.getElementById(HOVER_ID+'-cancel');
 setTimeout(function() { if(ta) ta.focus(); }, 50);
 if(ta) ta.addEventListener('input', function() { if (sub) sub.style.opacity = ta.value.trim() ? '1' : '0.4'; });
-if(ta) ta.addEventListener('focus', function() { ta.style.borderColor = '#0078d4'; });
-if(ta) ta.addEventListener('blur', function() { ta.style.borderColor = 'rgba(255,255,255,0.15)'; });
+if(ta) ta.addEventListener('focus', function() { ta.style.borderColor = '#007acc'; });
+if(ta) ta.addEventListener('blur', function() { ta.style.borderColor = '#3c3c3c'; });
 
 if(sub) sub.addEventListener('click', function() {
 var comment = ta ? ta.value.trim() : '';
