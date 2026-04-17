@@ -32,9 +32,8 @@ import { BROWSER_EDITOR_ACTIVE, BrowserActionCategory } from '../browserViewActi
 import { IBrowserViewModel } from '../../common/browserView.js';
 import { IBrowserAnnotation, BrowserAnnotationDetailLevel, createBrowserAnnotation } from '../../common/browserAnnotation.js';
 import { generateAnnotationOutput } from '../browserAnnotationOutput.js';
-import { BrowserAnnotationMarkers, IAnnotationThemeColors } from '../browserAnnotationMarkers.js';
+import { BrowserAnnotationMarkers, IAnnotationThemeColors, IAnnotationEditRequest } from '../browserAnnotationMarkers.js';
 import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
-import { createElementContextValue } from '../../../../../platform/browserElements/common/browserElements.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { editorBackground, foreground, descriptionForeground, inputBackground, inputBorder, focusBorder, buttonBackground, buttonForeground, editorWidgetBorder } from '../../../../../platform/theme/common/colorRegistry.js';
 
@@ -65,6 +64,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private _currentUrl: string = '';
 	private _annotationModeActive = false;
 	private _currentCts: CancellationTokenSource | undefined;
+	private _markerListenerCts: CancellationTokenSource | undefined;
 	private _detailLevel: BrowserAnnotationDetailLevel = 'standard';
 
 	private readonly _annotationModeContext: IContextKey<boolean>;
@@ -190,6 +190,9 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 				this._syncMarkers();
 			}
 		}));
+
+		// Listen for marker clicks when not in annotation mode
+		this._startMarkerClickListener(store);
 	}
 
 	override clear(): void {
@@ -231,68 +234,48 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	/**
-	 * Send annotations to chat as structured attachments — one per element,
-	 * matching the "Add Element to Chat" format with HTML, CSS, path, and
-	 * the user's comment included in the context value.
+	 * Send annotations to chat as a single structured attachment using the
+	 * same concise format as copyAnnotations (annotation output markdown).
+	 * Screenshots are attached separately if enabled.
 	 */
 	async sendAnnotationsToChat(): Promise<void> {
 		if (this._annotations.length === 0) {
 			return;
 		}
 
-		const attachCss = this.configurationService.getValue<boolean>('chat.sendElementsToChat.attachCSS');
 		const attachImages = this.configurationService.getValue<boolean>('chat.sendElementsToChat.attachImages');
 		const toAttach: IChatRequestVariableEntry[] = [];
 
-		for (const annotation of this._annotations) {
-			// Build the same structured context value as addElementToChat,
-			// but prepend the user's annotation comment
-			const elementContext = createElementContextValue(
-				{
-					outerHTML: annotation.outerHTML,
-					computedStyle: annotation.computedStyle,
-					bounds: annotation.bounds,
-					ancestors: annotation.ancestors ? [...annotation.ancestors] : undefined,
-					attributes: annotation.attributes ? { ...annotation.attributes } : undefined,
-					computedStyles: attachCss && annotation.computedStyles ? { ...annotation.computedStyles } : undefined,
-					dimensions: annotation.dimensions,
-					innerText: annotation.innerText,
-				},
-				annotation.displayNameFull,
-				attachCss,
-			);
+		const url = this.editor.model?.url ?? '';
+		const output = generateAnnotationOutput(this._annotations, url, this._detailLevel);
 
-			const value = `User Feedback: ${annotation.comment}\n\n${elementContext}`;
+		toAttach.push({
+			id: 'browser-annotations',
+			name: localize('browser.annotationsAttachment', "Page Annotations ({0})", this._annotations.length),
+			fullName: localize('browser.annotationsAttachmentFull', "Browser Page Annotations for {0}", url),
+			value: output,
+			modelDescription: `${this._annotations.length} browser element annotation(s) with user feedback`,
+			kind: 'element',
+			icon: ThemeIcon.fromId(Codicon.checklist.id),
+		});
 
-			toAttach.push({
-				id: `annotation-${annotation.id}`,
-				name: `#${annotation.index} ${annotation.displayName}`,
-				fullName: annotation.displayNameFull,
-				value,
-				modelDescription: `Browser element annotation with user feedback: "${annotation.comment}"`,
-				kind: 'element',
-				icon: ThemeIcon.fromId(Codicon.layout.id),
-				ancestors: annotation.ancestors ? [...annotation.ancestors] : undefined,
-				attributes: annotation.attributes ? { ...annotation.attributes } : undefined,
-				computedStyles: attachCss && annotation.computedStyles ? { ...annotation.computedStyles } : undefined,
-				dimensions: annotation.dimensions,
-				innerText: annotation.innerText,
-			});
-
-			// Attach stored screenshot (captured at annotation time)
-			if (attachImages && annotation.screenshotBase64) {
-				const binary = atob(annotation.screenshotBase64);
-				const bytes = new Uint8Array(binary.length);
-				for (let i = 0; i < binary.length; i++) {
-					bytes[i] = binary.charCodeAt(i);
+		// Attach stored screenshots
+		if (attachImages) {
+			for (const annotation of this._annotations) {
+				if (annotation.screenshotBase64) {
+					const binary = atob(annotation.screenshotBase64);
+					const bytes = new Uint8Array(binary.length);
+					for (let i = 0; i < binary.length; i++) {
+						bytes[i] = binary.charCodeAt(i);
+					}
+					toAttach.push({
+						id: `annotation-screenshot-${annotation.id}`,
+						name: `#${annotation.index} Screenshot`,
+						fullName: `Element Screenshot for ${annotation.displayName}`,
+						kind: 'image',
+						value: bytes.buffer,
+					});
 				}
-				toAttach.push({
-					id: `annotation-screenshot-${annotation.id}`,
-					name: `#${annotation.index} Screenshot`,
-					fullName: `Element Screenshot for ${annotation.displayName}`,
-					kind: 'image',
-					value: bytes.buffer,
-				});
 			}
 		}
 
@@ -433,6 +416,12 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			return;
 		}
 
+		// Cancel background marker click listener (annotation loop handles marker clicks)
+		if (this._markerListenerCts) {
+			this._markerListenerCts.dispose(true);
+			this._markerListenerCts = undefined;
+		}
+
 		this._annotationModeActive = true;
 		this._annotationModeContext.set(true);
 		this._updateToolbarUI();
@@ -499,6 +488,17 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 					continue;
 				}
 
+				// Handle marker click → edit existing annotation
+				if ((result as IAnnotationEditRequest).isEdit === true) {
+					const editReq = result as IAnnotationEditRequest;
+					await this._handleMarkerEdit(editReq.editAnnotationIndex);
+					if (!this._annotationModeActive) {
+						break;
+					}
+					await markers.activateHoverOverlay();
+					continue;
+				}
+
 				// Capture element screenshot
 				let screenshotBase64: string | undefined;
 				try {
@@ -552,6 +552,98 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 	private _syncMarkers(): void {
 		this._markers.value?.updateMarkers(this._annotations);
+	}
+
+	/**
+	 * Handle editing an existing annotation via its in-page marker.
+	 * Shows the edit popup and processes save/delete/cancel.
+	 */
+	private async _handleMarkerEdit(annotationIndex: number): Promise<void> {
+		const annotation = this._annotations.find(a => a.index === annotationIndex);
+		if (!annotation) {
+			return;
+		}
+
+		const markers = this._markers.value;
+		if (!markers) {
+			return;
+		}
+
+		// Show edit popup in the page
+		await markers.showEditPopup({
+			index: annotation.index,
+			comment: annotation.comment,
+			elementName: annotation.displayName,
+			bounds: annotation.bounds,
+			ancestors: annotation.ancestors ? [...annotation.ancestors] : undefined,
+			attributes: annotation.attributes ? { ...annotation.attributes } : undefined,
+		});
+
+		// Wait for user action (save, delete, or cancel)
+		const editCts = new CancellationTokenSource();
+		try {
+			const editResult = await markers.waitForEditResult(editCts.token);
+
+			if (!editResult || editResult.action === 'cancel') {
+				return;
+			}
+
+			if (editResult.action === 'delete') {
+				this.deleteAnnotation(annotation.id);
+				return;
+			}
+
+			if (editResult.action === 'save' && editResult.comment) {
+				const idx = this._annotations.findIndex(a => a.id === annotation.id);
+				if (idx !== -1) {
+					(this._annotations[idx] as { comment: string }).comment = editResult.comment;
+					this._syncMarkers();
+					this._saveAnnotationsToStorage();
+					this.logService.debug(`BrowserAnnotationFeature: Updated annotation #${annotation.index}`);
+				}
+			}
+		} finally {
+			editCts.dispose();
+		}
+	}
+
+	/**
+	 * Background listener for marker clicks when annotation mode is off.
+	 * This allows users to click markers to edit/delete annotations
+	 * without being in annotation mode.
+	 */
+	private _startMarkerClickListener(store: DisposableStore): void {
+		let disposed = false;
+		store.add({ dispose: () => { disposed = true; } });
+
+		const run = async () => {
+			while (!disposed) {
+				// Only listen when annotation mode is OFF and there are annotations
+				if (this._annotationModeActive || this._annotations.length === 0) {
+					await new Promise<void>(r => setTimeout(r, 300));
+					continue;
+				}
+
+				const markers = this._markers.value;
+				if (!markers) {
+					break;
+				}
+
+				this._markerListenerCts = new CancellationTokenSource();
+				try {
+					const index = await markers.waitForMarkerClick(this._markerListenerCts.token);
+					if (index && !this._annotationModeActive && !disposed) {
+						await this._handleMarkerEdit(index);
+					}
+				} catch {
+					// Marker click listener error — will retry
+				} finally {
+					this._markerListenerCts.dispose();
+					this._markerListenerCts = undefined;
+				}
+			}
+		};
+		run().catch(e => this.logService.warn('BrowserAnnotationFeature: Marker click listener error', e));
 	}
 
 	private _clearAnnotations(): void {

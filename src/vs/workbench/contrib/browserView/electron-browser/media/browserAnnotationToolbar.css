@@ -53,7 +53,7 @@
 	width: 26px;
 	height: 26px;
 	border: none;
-	border-radius: 4px;
+	border-radius: var(--vscode-cornerRadius-small);
 	background: transparent;
 	color: var(--vscode-descriptionForeground);
 	cursor: pointer;
@@ -88,7 +88,7 @@
 .browser-annotation-toolbar .browser-annotation-toolbar-separator {
 	width: 1px;
 	height: 16px;
-	background-color: var(--vscode-browser-border, var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.2)));
+	background-color: var(--vscode-browser-border, var(--vscode-editorWidget-border, transparent));
 	margin: 0 4px;
 	flex-shrink: 0;
 }

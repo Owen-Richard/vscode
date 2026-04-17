@@ -41,6 +41,15 @@ export interface IAnnotationClickResult {
 }
 
 /**
+ * Returned when the user clicks an existing marker badge during annotation mode,
+ * signalling that they want to edit (not create) an annotation.
+ */
+export interface IAnnotationEditRequest {
+	readonly isEdit: true;
+	readonly editAnnotationIndex: number;
+}
+
+/**
  * Self-contained JavaScript that gets injected into the target browser page
  * to render numbered annotation markers. The script manages its own DOM
  * elements and provides an update function on window.__annotationMarkers.
@@ -154,6 +163,18 @@ const MARKER_INJECTION_SCRIPT = `
 		return container;
 	}
 
+	function createHighlight(x, y, w, h, className, parent) {
+		var hl = document.createElement('div');
+		hl.className = className;
+		hl.style.left = (x - 2) + 'px';
+		hl.style.top = (y - 2) + 'px';
+		hl.style.width = (w + 4) + 'px';
+		hl.style.height = (h + 4) + 'px';
+		hl.setAttribute('aria-hidden', 'true');
+		parent.appendChild(hl);
+		return hl;
+	}
+
 	function findElement(annotation) {
 		// Try to find element by building a selector from ancestors
 		if (annotation.ancestors && annotation.ancestors.length > 0) {
@@ -227,14 +248,7 @@ const MARKER_INJECTION_SCRIPT = `
 			const scrollY = window.scrollY;
 
 			// Highlight outline (hidden by default, shown on marker hover)
-			const hl = document.createElement('div');
-			hl.className = CONTAINER_ID + '-highlight';
-			hl.style.left = (rect.left + scrollX - 2) + 'px';
-			hl.style.top = (rect.top + scrollY - 2) + 'px';
-			hl.style.width = (rect.width + 4) + 'px';
-			hl.style.height = (rect.height + 4) + 'px';
-			hl.setAttribute('aria-hidden', 'true');
-			container.appendChild(hl);
+			const hl = createHighlight(rect.left + scrollX, rect.top + scrollY, rect.width, rect.height, CONTAINER_ID + '-highlight', container);
 
 			// Numbered marker badge with enter animation
 			const marker = document.createElement('div');
@@ -255,6 +269,11 @@ const MARKER_INJECTION_SCRIPT = `
 			// Click marker to edit (notify VS Code)
 			marker.addEventListener('click', function(e) {
 				e.stopPropagation();
+				// If hover overlay is listening (annotation mode active), signal it
+				if (window.__annotationHover && window.__annotationHover._resolveMarkerEdit) {
+					window.__annotationHover._resolveMarkerEdit(annotation.index);
+					return;
+				}
 				if (_markerClickResolve) {
 					_markerClickResolve({ markerIndex: annotation.index });
 					_markerClickResolve = null;
@@ -279,14 +298,8 @@ const MARKER_INJECTION_SCRIPT = `
 	function showPending(x, y, w, h) {
 		var container = ensureContainer();
 		// Pending outline
-		var hl = document.createElement('div');
-		hl.className = CONTAINER_ID + '-highlight vis';
+		var hl = createHighlight(x + window.scrollX, y + window.scrollY, w, h, CONTAINER_ID + '-highlight vis', container);
 		hl.id = CONTAINER_ID + '-pending-hl';
-		hl.style.left = (x + window.scrollX - 2) + 'px';
-		hl.style.top = (y + window.scrollY - 2) + 'px';
-		hl.style.width = (w + 4) + 'px';
-		hl.style.height = (h + 4) + 'px';
-		container.appendChild(hl);
 		// Pending "+" badge
 		var pending = document.createElement('div');
 		pending.className = CONTAINER_ID + '-pending';
@@ -441,6 +454,25 @@ if (!tooltip) { tooltip = document.createElement('div'); tooltip.className = HOV
 if (!dragRect) { dragRect = document.createElement('div'); dragRect.className = HOVER_ID + '-drag'; document.body.appendChild(dragRect); }
 }
 
+function createGroupHighlight(r) {
+var h = document.createElement('div'); h.className = HOVER_ID + '-ghl';
+h.style.left = r.left+'px'; h.style.top = r.top+'px';
+h.style.width = r.width+'px'; h.style.height = r.height+'px';
+document.body.appendChild(h); groupHighlights.push(h);
+}
+
+// Cache querySelectorAll results to avoid repeated full-DOM queries during drag
+var _meaningfulCache = null, _meaningfulCacheTime = 0;
+var CACHE_TTL = 500; // ms — invalidate cache after half a second
+function getMeaningfulElements() {
+var now = Date.now();
+if (!_meaningfulCache || now - _meaningfulCacheTime > CACHE_TTL) {
+_meaningfulCache = Array.from(document.querySelectorAll(MEANINGFUL_SELECTOR));
+_meaningfulCacheTime = now;
+}
+return _meaningfulCache;
+}
+
 function onMouseMove(e) {
 if (!active && !isDragging) return;
 if (mouseDownPos || isDragging) { onDragMove(e); return; }
@@ -494,16 +526,13 @@ highlightAreaElements(left, top, left + w, top + h);
 
 function highlightAreaElements(left, top, right, bottom) {
 clearGroupHighlights();
-document.querySelectorAll(MEANINGFUL_SELECTOR).forEach(function(el) {
+getMeaningfulElements().forEach(function(el) {
 if (isOurs(el)) return;
 const r = el.getBoundingClientRect();
 if (r.width < 10 || r.height < 10) return; // skip tiny elements
 if (r.width > window.innerWidth * 0.8 && r.height > window.innerHeight * 0.5) return; // skip full-page containers
 if (r.left < right && r.right > left && r.top < bottom && r.bottom > top) {
-const h = document.createElement('div'); h.className = HOVER_ID + '-ghl';
-h.style.left = r.left+'px'; h.style.top = r.top+'px';
-h.style.width = r.width+'px'; h.style.height = r.height+'px';
-document.body.appendChild(h); groupHighlights.push(h);
+createGroupHighlight(r);
 }
 });
 }
@@ -517,7 +546,7 @@ if (wasDragging && dragStart) {
 const left = Math.min(dragStart.x, e.clientX), top = Math.min(dragStart.y, e.clientY);
 const right = Math.max(dragStart.x, e.clientX), bottom = Math.max(dragStart.y, e.clientY);
 const matches = [];
-document.querySelectorAll(MEANINGFUL_SELECTOR).forEach(function(el) {
+getMeaningfulElements().forEach(function(el) {
 if (isOurs(el)) return;
 const r = el.getBoundingClientRect();
 if (r.width < 10 || r.height < 10) return; // skip tiny elements
@@ -527,7 +556,7 @@ matches.push({ el: el, rect: r });
 }
 });
 // Filter out parent elements that contain other matches (prefer leaf nodes).
-// O(n²) but n is typically small (visible interactive elements in drag area).
+// O(n^2) but n is typically small (visible interactive elements in drag area).
 var final = matches.filter(function(m) { return !matches.some(function(o) { return o.el !== m.el && m.el.contains(o.el); }); });
 dragRect.classList.remove('vis'); clearGroupHighlights();
 isDragging = false; dragStart = null; mouseDownPos = null;
@@ -602,10 +631,7 @@ function renderGroupHighlights() {
 clearGroupHighlights();
 for (var i = 0; i < groupElements.length; i++) {
 var r = groupElements[i].el.getBoundingClientRect();
-var h = document.createElement('div'); h.className = HOVER_ID + '-ghl';
-h.style.left = r.left+'px'; h.style.top = r.top+'px';
-h.style.width = r.width+'px'; h.style.height = r.height+'px';
-document.body.appendChild(h); groupHighlights.push(h);
+createGroupHighlight(r);
 }
 }
 
@@ -754,6 +780,7 @@ window.addEventListener('scroll', onScroll, { passive: true });
 
 function deactivate() {
 active = false; isDragging = false; groupElements = [];
+_meaningfulCache = null; // invalidate element cache
 document.removeEventListener('mousemove', onMouseMove, true);
 document.removeEventListener('mousedown', onMouseDown, true);
 document.removeEventListener('mouseup', onMouseUp, true);
@@ -778,9 +805,156 @@ var theme = document.getElementById('__vscode-annotation-theme'); if (theme) the
 delete window.__annotationHover;
 }
 
+// -- Edit popup (shown when clicking an existing marker) -------------------
+
+var editResolve = null;
+
+function _resolveMarkerEdit(markerIndex) {
+removePopup();
+if (highlight) highlight.classList.remove('vis');
+if (tooltip) tooltip.classList.remove('vis');
+active = false;
+if (clickResolve) {
+clickResolve({ comment: null, editMarkerIndex: markerIndex });
+clickResolve = null;
+}
+}
+
+function findAnnotatedElement(data) {
+if (data.attributes && data.attributes.id) {
+var el = document.getElementById(data.attributes.id);
+if (el) return el;
+}
+if (data.ancestors && data.ancestors.length > 0) {
+var last = data.ancestors[data.ancestors.length - 1];
+if (last.id) {
+var el = document.getElementById(last.id);
+if (el) return el;
+}
+}
+if (data.attributes && data.attributes['data-testid']) {
+var el = document.querySelector('[data-testid="' + CSS.escape(data.attributes['data-testid']) + '"]');
+if (el) return el;
+}
+if (data.bounds) {
+var cx = data.bounds.x + data.bounds.width / 2;
+var cy = data.bounds.y + data.bounds.height / 2;
+var el = document.elementFromPoint(cx, cy);
+if (el && el !== document.body && el !== document.documentElement && !isOurs(el)) return el;
+}
+return null;
+}
+
+function showEditPopup(data) {
+removePopup();
+active = false;
+if (highlight) highlight.classList.remove('vis');
+if (tooltip) tooltip.classList.remove('vis');
+
+var targetEl = findAnnotatedElement(data);
+var targetRect = targetEl ? targetEl.getBoundingClientRect() : null;
+
+if (targetRect) {
+ensureElements();
+highlight.style.left = targetRect.left + 'px';
+highlight.style.top = targetRect.top + 'px';
+highlight.style.width = targetRect.width + 'px';
+highlight.style.height = targetRect.height + 'px';
+highlight.classList.add('vis');
+}
+
+var originalComment = data.comment || '';
+popupEl = document.createElement('div');
+popupEl.id = HOVER_ID + '-popup';
+popupEl.setAttribute('role', 'dialog');
+popupEl.setAttribute('aria-label', 'Edit annotation');
+var headerText = ('#' + data.index + ' ' + (data.elementName || 'element')).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+var trashSvg = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3h3v1h-1v9c0 .6-.4 1-1 1H5c-.6 0-1-.4-1-1V4H3V3h3V2c0-.6.4-1 1-1h2c.6 0 1 .4 1 1v1zm-1-1H7v1h2V2zM5 4v9h6V4H5zm1 2h1v5H6V6zm2 0h1v5H8V6z"/></svg>';
+
+popupEl.innerHTML = [
+'<div style="display:flex;align-items:center;margin-bottom:6px;">',
+'  <span style="font-size:11px;line-height:1.4;color:var(--ann-desc-fg, rgba(204,204,204,0.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span>',
+'</div>',
+'<textarea id="' + HOVER_ID + '-ta" rows="3" aria-label="Annotation comment" style="',
+'  width:100%;box-sizing:border-box;padding:4px 6px;font-size:13px;line-height:1.4;font-family:inherit;',
+'  background:var(--ann-input-bg, #3c3c3c);color:var(--ann-fg, #ccc);border:1px solid var(--ann-input-border, #3c3c3c);',
+'  border-radius:4px;resize:none;outline:none;"></textarea>',
+'<div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">',
+'  <button id="' + HOVER_ID + '-delete" aria-label="Delete annotation" title="Delete" style="padding:3px 5px;border-radius:4px;border:1px solid var(--ann-widget-border, rgba(255,255,255,0.1));background:transparent;color:var(--ann-fg, #ccc);cursor:pointer;display:flex;align-items:center;justify-content:center;">' + trashSvg + '</button>',
+'  <div style="display:flex;gap:4px;">',
+'    <button id="' + HOVER_ID + '-cancel" aria-label="Cancel" style="padding:4px 8px;font-size:12px;line-height:16px;border-radius:4px;border:1px solid var(--ann-widget-border, rgba(255,255,255,0.1));background:transparent;color:var(--ann-fg, #ccc);cursor:pointer;font-family:inherit;">Cancel</button>',
+'    <button id="' + HOVER_ID + '-submit" aria-label="Save" style="padding:4px 8px;font-size:12px;line-height:16px;border-radius:4px;border:1px solid transparent;background:var(--ann-btn-bg, #0078d4);color:var(--ann-btn-fg, #fff);cursor:pointer;opacity:0.4;font-family:inherit;">Save</button>',
+'  </div>',
+'</div>',
+].join('');
+
+var px = targetRect ? (targetRect.left + targetRect.width / 2) : window.innerWidth / 2;
+var py = targetRect ? (targetRect.bottom + 12) : window.innerHeight / 2;
+
+Object.assign(popupEl.style, {
+position: 'fixed',
+left: Math.max(140, Math.min(px, window.innerWidth - 140)) + 'px',
+top: Math.min(py, window.innerHeight - 180) + 'px',
+transform: 'translateX(-50%)',
+width: '264px', padding: '8px',
+background: 'var(--ann-editor-bg, #252526)',
+borderRadius: '8px',
+border: '1px solid var(--ann-widget-border, #454545)',
+boxShadow: '0 0 20px rgba(0,0,0,0.15)',
+zIndex: '2147483647',
+fontFamily: 'var(--ann-font, -apple-system,BlinkMacSystemFont,"Segoe WPC","Segoe UI",system-ui,"Ubuntu","Droid Sans",sans-serif)',
+fontSize: '13px', lineHeight: '1.4em',
+animation: '__ah_pop 0.2s ease-out forwards',
+});
+document.body.appendChild(popupEl);
+
+var ta = document.getElementById(HOVER_ID + '-ta');
+var sub = document.getElementById(HOVER_ID + '-submit');
+var can = document.getElementById(HOVER_ID + '-cancel');
+var del = document.getElementById(HOVER_ID + '-delete');
+
+if (ta) { ta.value = originalComment; }
+setTimeout(function() { if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 50);
+
+if (ta) ta.addEventListener('input', function() {
+var changed = ta.value.trim() !== originalComment && ta.value.trim().length > 0;
+if (sub) sub.style.opacity = changed ? '1' : '0.4';
+});
+if (ta) ta.addEventListener('focus', function() { ta.style.borderColor = 'var(--ann-focus-border, #007acc)'; });
+if (ta) ta.addEventListener('blur', function() { ta.style.borderColor = 'var(--ann-input-border, #3c3c3c)'; });
+
+if (sub) sub.addEventListener('click', function() {
+var comment = ta ? ta.value.trim() : '';
+if (!comment || comment === originalComment) return;
+resolveEdit({ action: 'save', comment: comment });
+});
+if (can) can.addEventListener('click', function() {
+resolveEdit({ action: 'cancel', comment: '' });
+});
+if (del) del.addEventListener('click', function() {
+resolveEdit({ action: 'delete', comment: '' });
+});
+if (ta) ta.addEventListener('keydown', function(e) {
+if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (sub) sub.click(); }
+if (e.key === 'Escape') { e.preventDefault(); if (can) can.click(); }
+});
+}
+
+function resolveEdit(result) {
+removePopup();
+if (highlight) highlight.classList.remove('vis');
+if (editResolve) { editResolve(result); editResolve = null; }
+}
+
+function waitForEditResult() {
+return new Promise(function(resolve) { editResolve = resolve; });
+}
+
 window.__annotationHover = {
 activate: activate, deactivate: deactivate, waitForClick: waitForClick, remove: remove,
 getClickedElement: function() { return clickedElement; },
+showEditPopup: showEditPopup, waitForEditResult: waitForEditResult,
+_resolveMarkerEdit: _resolveMarkerEdit,
 };
 })();
 `;
@@ -929,17 +1103,17 @@ export class BrowserAnnotationMarkers extends Disposable {
 
 	/**
 	 * Wait for the user to click an element and submit a comment via the in-page popup.
-	 * Returns element data + comment, or undefined if cancelled.
+	 * Returns element data + comment, an edit request if a marker was clicked, or undefined if cancelled.
 	 */
-	async waitForAnnotation(token: CancellationToken): Promise<IAnnotationClickResult | undefined> {
+	async waitForAnnotation(token: CancellationToken): Promise<IAnnotationClickResult | IAnnotationEditRequest | undefined> {
 		try {
 			await this._ensureTracked();
 			await this._ensureHoverInjected();
 
-			// waitForClick now resolves after the user submits or cancels the popup.
-			// It returns { comment: string } on submit, or { comment: null } on cancel.
+			// waitForClick now resolves after the user submits or cancels the popup,
+			// or when a marker is clicked (editMarkerIndex set).
 			const result = await Promise.race([
-				this._playwrightService.invokeFunctionRaw<{ comment: string | null; mode?: string; selectedText?: string; elementBounds?: Array<{ x: number; y: number; width: number; height: number }> }>(
+				this._playwrightService.invokeFunctionRaw<{ comment: string | null; mode?: string; selectedText?: string; elementBounds?: Array<{ x: number; y: number; width: number; height: number }>; editMarkerIndex?: number }>(
 					this._browserId,
 					`async (page) => {
 						return await page.evaluate(() => {
@@ -952,7 +1126,16 @@ export class BrowserAnnotationMarkers extends Disposable {
 				}),
 			]);
 
-			if (!result || token.isCancellationRequested || !result.comment) {
+			if (!result || token.isCancellationRequested) {
+				return undefined;
+			}
+
+			// Check if this is a marker edit request (user clicked an existing marker)
+			if ((result as Record<string, unknown>).editMarkerIndex !== undefined) {
+				return { isEdit: true as const, editAnnotationIndex: (result as Record<string, unknown>).editMarkerIndex as number };
+			}
+
+			if (!result.comment) {
 				return undefined;
 			}
 
@@ -1085,6 +1268,79 @@ export class BrowserAnnotationMarkers extends Disposable {
 		} catch (e) {
 			if (!token.isCancellationRequested) {
 				this._logService.warn('BrowserAnnotationMarkers: Error waiting for marker click', e);
+			}
+			return undefined;
+		}
+	}
+
+	/**
+	 * Show the edit popup in the page for an existing annotation.
+	 */
+	async showEditPopup(data: {
+		index: number;
+		comment: string;
+		elementName: string;
+		bounds?: { x: number; y: number; width: number; height: number };
+		ancestors?: readonly { tagName: string; id?: string; classNames?: string[] }[];
+		attributes?: Readonly<Record<string, string>>;
+	}): Promise<void> {
+		try {
+			await this._ensureTracked();
+			await this._ensureHoverInjected();
+
+			const serialized = {
+				index: data.index,
+				comment: data.comment,
+				elementName: data.elementName,
+				bounds: data.bounds,
+				ancestors: data.ancestors ? [...data.ancestors] : undefined,
+				attributes: data.attributes ? { ...data.attributes } : undefined,
+			};
+
+			await this._playwrightService.invokeFunctionRaw(
+				this._browserId,
+				`async (page, data) => {
+					await page.evaluate((d) => {
+						window.__annotationHover?.showEditPopup(d);
+					}, data);
+				}`,
+				serialized,
+			);
+		} catch (e) {
+			this._logService.warn('BrowserAnnotationMarkers: Failed to show edit popup', e);
+		}
+	}
+
+	/**
+	 * Wait for the user to complete the edit popup (save, delete, or cancel).
+	 */
+	async waitForEditResult(token: CancellationToken): Promise<{ action: string; comment: string } | undefined> {
+		try {
+			await this._ensureTracked();
+			await this._ensureHoverInjected();
+
+			const result = await Promise.race([
+				this._playwrightService.invokeFunctionRaw<{ action: string; comment: string }>(
+					this._browserId,
+					`async (page) => {
+						return await page.evaluate(() => {
+							return window.__annotationHover?.waitForEditResult();
+						});
+					}`,
+				),
+				new Promise<undefined>(resolve => {
+					token.onCancellationRequested(() => resolve(undefined));
+				}),
+			]);
+
+			if (!result || token.isCancellationRequested) {
+				return undefined;
+			}
+
+			return result;
+		} catch (e) {
+			if (!token.isCancellationRequested) {
+				this._logService.warn('BrowserAnnotationMarkers: Error waiting for edit result', e);
 			}
 			return undefined;
 		}
