@@ -647,6 +647,18 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 			const onMouseUp = () => {
 				dragHandle.style.cursor = '';
+
+				// Snap toolbar back above BrowserView if dragged into content area
+				const parentRect = this._toolbarElement.parentElement?.getBoundingClientRect();
+				const browserRect = this.editor.browserContainer.getBoundingClientRect();
+				if (parentRect) {
+					const maxTop = browserRect.top - parentRect.top - this._toolbarElement.offsetHeight - 2;
+					const currentTop = parseInt(this._toolbarElement.style.top) || 0;
+					if (currentTop > maxTop) {
+						this._toolbarElement.style.top = Math.max(0, maxTop) + 'px';
+					}
+				}
+
 				// Restore BrowserView visibility
 				this.editor.model?.setVisible(true);
 				win.document.removeEventListener('mousemove', onMouseMove);
