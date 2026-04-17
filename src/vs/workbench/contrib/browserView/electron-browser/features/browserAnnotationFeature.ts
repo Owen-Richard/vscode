@@ -214,7 +214,6 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			return;
 		}
 
-		const model = this.editor.model;
 		const attachCss = this.configurationService.getValue<boolean>('chat.sendElementsToChat.attachCSS');
 		const attachImages = this.configurationService.getValue<boolean>('chat.sendElementsToChat.attachImages');
 		const toAttach: IChatRequestVariableEntry[] = [];
@@ -254,23 +253,20 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 				innerText: annotation.innerText,
 			});
 
-			// Capture per-element screenshot
-			if (attachImages && model) {
-				try {
-					const screenshotBuffer = await model.captureScreenshot({
-						quality: 90,
-						pageRect: annotation.bounds,
-					});
-					toAttach.push({
-						id: `annotation-screenshot-${annotation.id}`,
-						name: `#${annotation.index} Screenshot`,
-						fullName: `Element Screenshot for ${annotation.displayName}`,
-						kind: 'image',
-						value: screenshotBuffer.buffer,
-					});
-				} catch {
-					// Screenshot may fail for off-screen elements
+			// Attach stored screenshot (captured at annotation time)
+			if (attachImages && annotation.screenshotBase64) {
+				const binary = atob(annotation.screenshotBase64);
+				const bytes = new Uint8Array(binary.length);
+				for (let i = 0; i < binary.length; i++) {
+					bytes[i] = binary.charCodeAt(i);
 				}
+				toAttach.push({
+					id: `annotation-screenshot-${annotation.id}`,
+					name: `#${annotation.index} Screenshot`,
+					fullName: `Element Screenshot for ${annotation.displayName}`,
+					kind: 'image',
+					value: bytes.buffer,
+				});
 			}
 		}
 
@@ -477,12 +473,25 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 					continue;
 				}
 
+				// Capture element screenshot
+				let screenshotBase64: string | undefined;
+				try {
+					const screenshotBuffer = await model.captureScreenshot({
+						quality: 90,
+						pageRect: result.elementData.bounds,
+					});
+					screenshotBase64 = btoa(String.fromCharCode(...screenshotBuffer.buffer));
+				} catch {
+					// Screenshot may fail for off-screen elements
+				}
+
 				// Create and store the annotation
 				const annotation = createBrowserAnnotation(
 					result.elementData,
 					result.comment,
 					this._annotations.length + 1,
 					model.url,
+					screenshotBase64,
 				);
 				this._annotations.push(annotation);
 				this._updateHasAnnotationsContext();

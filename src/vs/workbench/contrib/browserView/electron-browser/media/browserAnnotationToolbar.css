@@ -9,9 +9,13 @@
 	justify-content: center;
 	gap: 2px;
 	padding: 4px 8px;
-	background-color: var(--vscode-editorWidget-background);
-	border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-contrastBorder, transparent));
+	margin: 0 3px;
 	flex-shrink: 0;
+	position: relative;
+	z-index: 10;
+	border: 1px solid var(--vscode-browser-border, var(--vscode-editorWidget-border, transparent));
+	border-radius: var(--vscode-cornerRadius-small);
+	background: transparent;
 
 	&.visible {
 		display: flex;
@@ -27,13 +31,14 @@
 	border: none;
 	border-radius: 4px;
 	background: transparent;
-	color: var(--vscode-editorWidget-foreground);
+	color: var(--vscode-descriptionForeground);
 	cursor: pointer;
 	padding: 0;
 	outline: none !important;
 
 	&:hover {
 		background-color: var(--vscode-toolbar-hoverBackground);
+		color: var(--vscode-foreground);
 	}
 
 	&:focus-visible {
@@ -43,7 +48,6 @@
 
 	&.active {
 		color: var(--vscode-textLink-foreground);
-		background-color: var(--vscode-toolbar-hoverBackground);
 	}
 
 	.codicon {
@@ -54,7 +58,7 @@
 .browser-annotation-toolbar .browser-annotation-toolbar-separator {
 	width: 1px;
 	height: 16px;
-	background-color: var(--vscode-editorWidget-border, var(--vscode-contrastBorder, rgba(128, 128, 128, 0.2)));
+	background-color: var(--vscode-browser-border, var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.2)));
 	margin: 0 4px;
 	flex-shrink: 0;
 }

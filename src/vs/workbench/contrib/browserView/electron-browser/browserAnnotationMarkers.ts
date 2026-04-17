@@ -702,7 +702,7 @@ export class BrowserAnnotationMarkers extends Disposable {
 				return undefined;
 			}
 
-			// Now extract the element data for the clicked element.
+			// Now extract rich element data for the clicked element.
 			const elementData = await this._playwrightService.invokeFunctionRaw<IElementData | null>(
 				this._browserId,
 				`async (page) => {
@@ -714,6 +714,7 @@ export class BrowserAnnotationMarkers extends Disposable {
 						const outerHTML = el.outerHTML;
 						const innerText = el.textContent?.trim() || '';
 
+						// Build ancestors
 						const ancestors = [];
 						let current = el;
 						while (current && current !== document.documentElement) {
@@ -728,17 +729,45 @@ export class BrowserAnnotationMarkers extends Disposable {
 							current = current.parentElement;
 						}
 
+						// Build attributes
 						const attributes = {};
 						for (const attr of el.attributes) {
 							attributes[attr.name] = attr.value;
 						}
 
+						// Capture computed styles (matching the richness of Add Element to Chat)
+						const computed = window.getComputedStyle(el);
+						const styleProps = [
+							'display', 'position', 'width', 'height', 'margin', 'padding',
+							'border', 'background', 'background-color', 'color', 'font-family',
+							'font-size', 'font-weight', 'line-height', 'text-align', 'text-decoration',
+							'opacity', 'visibility', 'overflow', 'z-index', 'flex', 'flex-direction',
+							'justify-content', 'align-items', 'gap', 'grid-template-columns',
+							'grid-template-rows', 'box-shadow', 'border-radius', 'cursor',
+							'transition', 'transform', 'max-width', 'max-height', 'min-width', 'min-height',
+						];
+						const computedStyles = {};
+						for (const prop of styleProps) {
+							const val = computed.getPropertyValue(prop);
+							if (val && val !== 'none' && val !== 'normal' && val !== 'auto' && val !== '0px' && val !== 'rgba(0, 0, 0, 0)') {
+								computedStyles[prop] = val;
+							}
+						}
+
+						// Build full computed style string
+						const allStyles = [];
+						for (let i = 0; i < computed.length; i++) {
+							const name = computed[i];
+							allStyles.push(name + ': ' + computed.getPropertyValue(name));
+						}
+
 						return {
 							outerHTML: outerHTML.length > 5000 ? outerHTML.slice(0, 5000) + '...' : outerHTML,
-							computedStyle: '',
+							computedStyle: allStyles.join(';\\n'),
 							bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
 							ancestors: ancestors.reverse(),
 							attributes,
+							computedStyles,
 							dimensions: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
 							innerText: innerText.slice(0, 500),
 						};

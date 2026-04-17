@@ -60,6 +60,9 @@ export interface IBrowserAnnotation {
 	/** Inner text content of the element. */
 	readonly innerText: string | undefined;
 
+	/** Base64-encoded screenshot of the element (captured at annotation time). */
+	readonly screenshotBase64: string | undefined;
+
 	/** Timestamp when the annotation was created. */
 	readonly timestamp: number;
 }
@@ -72,6 +75,7 @@ export function createBrowserAnnotation(
 	comment: string,
 	index: number,
 	url: string,
+	screenshotBase64?: string,
 ): IBrowserAnnotation {
 	const { displayNameShort, displayNameFull } = buildDisplayNames(elementData);
 
@@ -91,6 +95,7 @@ export function createBrowserAnnotation(
 		computedStyles: elementData.computedStyles,
 		dimensions: elementData.dimensions,
 		innerText: elementData.innerText,
+		screenshotBase64,
 		timestamp: Date.now(),
 	};
 }
