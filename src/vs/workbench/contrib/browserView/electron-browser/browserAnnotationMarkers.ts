@@ -304,7 +304,7 @@ const MARKER_INJECTION_SCRIPT = `
 		var pending = document.createElement('div');
 		pending.className = CONTAINER_ID + '-pending';
 		pending.id = CONTAINER_ID + '-pending-marker';
-		pending.textContent = '+';
+		pending.innerHTML = '<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><path d="M6.5 1.5v4h4v1h-4v4h-1v-4h-4v-1h4v-4z"/></svg>';
 		pending.style.left = (x + w + window.scrollX) + 'px';
 		pending.style.top = (y + window.scrollY) + 'px';
 		container.appendChild(pending);
