@@ -612,42 +612,39 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	private _setupDrag(dragHandle: HTMLElement): void {
-		let startX = 0;
-		let startY = 0;
-		let startLeft = 0;
-		let startTop = 0;
-
 		const onMouseDown = (e: MouseEvent) => {
 			e.preventDefault();
 			const win = dom.getWindow(this._toolbarElement);
-			startX = e.clientX;
-			startY = e.clientY;
-			const rect = this._toolbarElement.getBoundingClientRect();
-			const parentRect = this._toolbarElement.parentElement?.getBoundingClientRect();
-			startLeft = rect.left - (parentRect?.left ?? 0);
-			startTop = rect.top - (parentRect?.top ?? 0);
+			const toolbarRect = this._toolbarElement.getBoundingClientRect();
+			const offsetX = e.clientX - toolbarRect.left;
+			const offsetY = e.clientY - toolbarRect.top;
 
-			// Remove centering transform for absolute positioning
-			this._toolbarElement.style.left = startLeft + 'px';
-			this._toolbarElement.style.top = startTop + 'px';
-			this._toolbarElement.style.transform = 'none';
+			// Switch from centered to absolute positioning without jumping
+			const parentRect = this._toolbarElement.parentElement?.getBoundingClientRect();
+			if (parentRect) {
+				this._toolbarElement.style.left = (toolbarRect.left - parentRect.left) + 'px';
+				this._toolbarElement.style.top = (toolbarRect.top - parentRect.top) + 'px';
+				this._toolbarElement.style.transform = 'none';
+			}
+
+			dragHandle.style.cursor = 'grabbing';
 
 			const onMouseMove = (e: MouseEvent) => {
 				e.preventDefault();
-				const dx = e.clientX - startX;
-				const dy = e.clientY - startY;
 				const parentRect = this._toolbarElement.parentElement?.getBoundingClientRect();
-				const pw = parentRect?.width ?? 800;
-				const ph = parentRect?.height ?? 600;
+				if (!parentRect) {
+					return;
+				}
 				const tw = this._toolbarElement.offsetWidth;
-				const th = this._toolbarElement.offsetHeight;
-				const newLeft = Math.max(0, Math.min(startLeft + dx, pw - tw));
-				const newTop = Math.max(0, Math.min(startTop + dy, ph - th));
+				const navbarHeight = 44; // Constrain to navbar area (above BrowserView)
+				const newLeft = Math.max(0, Math.min(e.clientX - parentRect.left - offsetX, parentRect.width - tw));
+				const newTop = Math.max(0, Math.min(e.clientY - parentRect.top - offsetY, navbarHeight));
 				this._toolbarElement.style.left = newLeft + 'px';
 				this._toolbarElement.style.top = newTop + 'px';
 			};
 
 			const onMouseUp = () => {
+				dragHandle.style.cursor = '';
 				win.document.removeEventListener('mousemove', onMouseMove);
 				win.document.removeEventListener('mouseup', onMouseUp);
 			};
