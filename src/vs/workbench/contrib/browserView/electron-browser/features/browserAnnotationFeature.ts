@@ -77,9 +77,9 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private readonly _toggleBtn: HTMLButtonElement;
 	private readonly _copyBtn: HTMLButtonElement;
 	private readonly _sendToChatBtn: HTMLButtonElement;
-	private readonly _manageBtn: HTMLButtonElement;
 	private readonly _clearBtn: HTMLButtonElement;
 	private readonly _hideBtn: HTMLButtonElement;
+	private readonly _hideIcon: HTMLSpanElement;
 
 	constructor(
 		editor: BrowserEditor,
@@ -116,11 +116,6 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 		this._toolbarElement.appendChild(this._createSeparator());
 
-		this._manageBtn = this._createButton('codicon-list-ordered', localize('browser.annotateManage', "Manage Annotations"));
-		this._manageBtn.disabled = true;
-		this._toolbarElement.appendChild(this._manageBtn);
-		this._register(dom.addDisposableListener(this._manageBtn, 'click', () => this.manageAnnotations()));
-
 		this._copyBtn = this._createButton('codicon-copy', localize('browser.annotateCopy', "Copy Annotations"));
 		this._copyBtn.disabled = true;
 		this._toolbarElement.appendChild(this._copyBtn);
@@ -134,6 +129,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._toolbarElement.appendChild(this._createSeparator());
 
 		this._hideBtn = this._createButton('codicon-eye-closed', localize('browser.annotateHide', "Hide Annotations"));
+		this._hideIcon = this._hideBtn.firstElementChild as HTMLSpanElement;
 		this._hideBtn.disabled = true;
 		this._toolbarElement.appendChild(this._hideBtn);
 		this._register(dom.addDisposableListener(this._hideBtn, 'click', () => this.toggleMarkersVisibility()));
@@ -297,6 +293,22 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	 */
 	clearAnnotations(): void {
 		this._clearAnnotations();
+	}
+
+	/**
+	 * Toggle visibility of annotation markers in the page.
+	 */
+	toggleMarkersVisibility(): void {
+		if (this._annotations.length === 0) {
+			return;
+		}
+		this._markersVisible = !this._markersVisible;
+		if (this._markersVisible) {
+			this._syncMarkers();
+		} else {
+			this._markers.value?.clearMarkers();
+		}
+		this._updateToolbarUI();
 	}
 
 	/**
@@ -560,7 +572,9 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	private _syncMarkers(): void {
-		this._markers.value?.updateMarkers(this._annotations);
+		if (this._markersVisible) {
+			this._markers.value?.updateMarkers(this._annotations);
+		}
 	}
 
 	/**
@@ -657,6 +671,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 	private _clearAnnotations(): void {
 		this._annotations.length = 0;
+		this._markersVisible = true;
 		this._updateHasAnnotationsContext();
 		this._markers.value?.clearMarkers();
 		this._saveAnnotationsToStorage();
@@ -717,10 +732,21 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._toggleBtn.setAttribute('aria-pressed', String(this._annotationModeActive));
 
 		// Disable (not hide) buttons when no annotations
-		this._manageBtn.disabled = !hasAnnotations;
 		this._copyBtn.disabled = !hasAnnotations;
 		this._sendToChatBtn.disabled = !hasAnnotations;
 		this._clearBtn.disabled = !hasAnnotations;
+		this._hideBtn.disabled = !hasAnnotations;
+
+		// Update hide/show button icon and label
+		if (this._markersVisible) {
+			this._hideIcon.className = 'codicon codicon-eye-closed';
+			this._hideBtn.title = localize('browser.annotateHide', "Hide Annotations");
+			this._hideBtn.setAttribute('aria-label', localize('browser.annotateHide', "Hide Annotations"));
+		} else {
+			this._hideIcon.className = 'codicon codicon-eye';
+			this._hideBtn.title = localize('browser.annotateShow', "Show Annotations");
+			this._hideBtn.setAttribute('aria-label', localize('browser.annotateShow', "Show Annotations"));
+		}
 	}
 
 	private _createButton(iconClass: string, title: string): HTMLButtonElement {
