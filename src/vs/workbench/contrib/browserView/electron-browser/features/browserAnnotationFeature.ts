@@ -23,6 +23,8 @@ import { IChatWidgetService } from '../../../chat/browser/chat.js';
 import { IChatRequestVariableEntry } from '../../../chat/common/attachments/chatVariableEntries.js';
 import { ThemeIcon } from '../../../../../base/common/themables.js';
 import { INotificationService, Severity } from '../../../../../platform/notification/common/notification.js';
+import { IConfigurationService } from '../../../../../platform/configuration/common/configuration.js';
+import { IStorageService, StorageScope, StorageTarget } from '../../../../../platform/storage/common/storage.js';
 import { ChatContextKeys } from '../../../chat/common/actions/chatContextKeys.js';
 
 import { BrowserEditor, BrowserEditorContribution, CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR } from '../browserEditor.js';
@@ -32,6 +34,7 @@ import { IBrowserAnnotation, BrowserAnnotationDetailLevel, createBrowserAnnotati
 import { generateAnnotationOutput } from '../browserAnnotationOutput.js';
 import { BrowserAnnotationMarkers } from '../browserAnnotationMarkers.js';
 import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
+import { createElementContextValue } from '../../../../../platform/browserElements/common/browserElements.js';
 
 // -- Context Keys ----------------------------------------------------------
 
@@ -45,6 +48,8 @@ const CONTEXT_BROWSER_HAS_ANNOTATIONS = new RawContextKey<boolean>(
 	localize('browser.hasAnnotations', "Whether the browser has any annotations")
 );
 
+const STORAGE_KEY_PREFIX = 'browserAnnotations.';
+
 // -- Annotation Feature Contribution --------------------------------------
 
 /**
@@ -55,6 +60,7 @@ const CONTEXT_BROWSER_HAS_ANNOTATIONS = new RawContextKey<boolean>(
 export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 	private readonly _annotations: IBrowserAnnotation[] = [];
+	private _currentUrl: string = '';
 	private _annotationModeActive = false;
 	private _currentCts: CancellationTokenSource | undefined;
 	private _detailLevel: BrowserAnnotationDetailLevel = 'standard';
@@ -82,6 +88,8 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@INotificationService private readonly notificationService: INotificationService,
 		@IPlaywrightService private readonly playwrightService: IPlaywrightService,
+		@IConfigurationService private readonly configurationService: IConfigurationService,
+		@IStorageService private readonly storageService: IStorageService,
 	) {
 		super(editor);
 		this._annotationModeContext = CONTEXT_BROWSER_ANNOTATION_MODE_ACTIVE.bindTo(contextKeyService);
@@ -134,16 +142,27 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._markers.value = markers;
 		store.add(markers);
 
-		// Show the toolbar when a page is loaded
+		// Load persisted annotations for the current URL
+		this._currentUrl = model.url;
+		this._loadAnnotationsFromStorage();
 		this._updateToolbarUI();
+		if (this._annotations.length > 0) {
+			this._syncMarkers();
+		}
 
-		// When the page navigates, exit annotation mode and clear markers
+		// When the page navigates, save current, then load for new URL
 		store.add(model.onDidNavigate(() => {
 			markers.resetInjectionState();
 			if (this._annotationModeActive) {
 				this._stopAnnotationMode();
 			}
-			this._clearAnnotations();
+			// Load annotations for the new URL (may be empty)
+			this._currentUrl = model.url;
+			this._loadAnnotationsFromStorage();
+			this._updateToolbarUI();
+			if (this._annotations.length > 0) {
+				this._syncMarkers();
+			}
 		}));
 	}
 
@@ -186,25 +205,74 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	/**
-	 * Send annotations to chat as a structured attachment.
+	 * Send annotations to chat as structured attachments — one per element,
+	 * matching the "Add Element to Chat" format with HTML, CSS, path, and
+	 * the user's comment included in the context value.
 	 */
 	async sendAnnotationsToChat(): Promise<void> {
 		if (this._annotations.length === 0) {
 			return;
 		}
 
-		const url = this.editor.model?.url ?? '';
-		const output = generateAnnotationOutput(this._annotations, url, this._detailLevel);
+		const model = this.editor.model;
+		const attachCss = this.configurationService.getValue<boolean>('chat.sendElementsToChat.attachCSS');
+		const attachImages = this.configurationService.getValue<boolean>('chat.sendElementsToChat.attachImages');
+		const toAttach: IChatRequestVariableEntry[] = [];
 
-		const toAttach: IChatRequestVariableEntry[] = [{
-			id: 'browser-annotations-' + Date.now(),
-			name: localize('browser.annotationsAttachmentName', "Page Annotations ({0})", this._annotations.length),
-			fullName: localize('browser.annotationsAttachmentFullName', "Browser Page Annotations"),
-			value: output,
-			modelDescription: 'Structured browser page annotations with element context and user feedback.',
-			kind: 'element',
-			icon: ThemeIcon.fromId(Codicon.checklist.id),
-		}];
+		for (const annotation of this._annotations) {
+			// Build the same structured context value as addElementToChat,
+			// but prepend the user's annotation comment
+			const elementContext = createElementContextValue(
+				{
+					outerHTML: annotation.outerHTML,
+					computedStyle: annotation.computedStyle,
+					bounds: annotation.bounds,
+					ancestors: annotation.ancestors ? [...annotation.ancestors] : undefined,
+					attributes: annotation.attributes ? { ...annotation.attributes } : undefined,
+					computedStyles: attachCss && annotation.computedStyles ? { ...annotation.computedStyles } : undefined,
+					dimensions: annotation.dimensions,
+					innerText: annotation.innerText,
+				},
+				annotation.displayNameFull,
+				attachCss,
+			);
+
+			const value = `User Feedback: ${annotation.comment}\n\n${elementContext}`;
+
+			toAttach.push({
+				id: `annotation-${annotation.id}`,
+				name: `#${annotation.index} ${annotation.displayName}`,
+				fullName: annotation.displayNameFull,
+				value,
+				modelDescription: `Browser element annotation with user feedback: "${annotation.comment}"`,
+				kind: 'element',
+				icon: ThemeIcon.fromId(Codicon.layout.id),
+				ancestors: annotation.ancestors ? [...annotation.ancestors] : undefined,
+				attributes: annotation.attributes ? { ...annotation.attributes } : undefined,
+				computedStyles: attachCss && annotation.computedStyles ? { ...annotation.computedStyles } : undefined,
+				dimensions: annotation.dimensions,
+				innerText: annotation.innerText,
+			});
+
+			// Capture per-element screenshot
+			if (attachImages && model) {
+				try {
+					const screenshotBuffer = await model.captureScreenshot({
+						quality: 90,
+						pageRect: annotation.bounds,
+					});
+					toAttach.push({
+						id: `annotation-screenshot-${annotation.id}`,
+						name: `#${annotation.index} Screenshot`,
+						fullName: `Element Screenshot for ${annotation.displayName}`,
+						kind: 'image',
+						value: screenshotBuffer.buffer,
+					});
+				} catch {
+					// Screenshot may fail for off-screen elements
+				}
+			}
+		}
 
 		const widget = await this.chatWidgetService.revealWidget() ?? this.chatWidgetService.lastFocusedWidget;
 		widget?.attachmentModel?.addContext(...toAttach);
@@ -230,6 +298,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			}
 			this._updateHasAnnotationsContext();
 			this._syncMarkers();
+			this._saveAnnotationsToStorage();
 		}
 	}
 
@@ -321,6 +390,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 				if (idx !== -1) {
 					(this._annotations[idx] as { comment: string }).comment = newComment;
 					this._syncMarkers();
+					this._saveAnnotationsToStorage();
 				}
 			}
 		}
@@ -422,6 +492,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 				this._annotations.push(annotation);
 				this._updateHasAnnotationsContext();
 				this._syncMarkers();
+				this._saveAnnotationsToStorage();
 
 				this.logService.debug(`BrowserAnnotationFeature: Added annotation #${annotation.index} for ${annotation.displayName}`);
 
@@ -450,6 +521,46 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._annotations.length = 0;
 		this._updateHasAnnotationsContext();
 		this._markers.value?.clearMarkers();
+		this._saveAnnotationsToStorage();
+	}
+
+	// -- Storage -----------------------------------------------------------
+
+	private _storageKey(): string {
+		return `${STORAGE_KEY_PREFIX}${this._currentUrl}`;
+	}
+
+	private _saveAnnotationsToStorage(): void {
+		if (!this._currentUrl) {
+			return;
+		}
+		if (this._annotations.length === 0) {
+			this.storageService.remove(this._storageKey(), StorageScope.WORKSPACE);
+		} else {
+			this.storageService.store(
+				this._storageKey(),
+				JSON.stringify(this._annotations),
+				StorageScope.WORKSPACE,
+				StorageTarget.MACHINE,
+			);
+		}
+	}
+
+	private _loadAnnotationsFromStorage(): void {
+		this._annotations.length = 0;
+		if (!this._currentUrl) {
+			return;
+		}
+		const raw = this.storageService.get(this._storageKey(), StorageScope.WORKSPACE);
+		if (raw) {
+			try {
+				const parsed = JSON.parse(raw) as IBrowserAnnotation[];
+				this._annotations.push(...parsed);
+			} catch {
+				// Corrupted data — discard
+			}
+		}
+		this._updateHasAnnotationsContext();
 	}
 
 	private _updateHasAnnotationsContext(): void {
