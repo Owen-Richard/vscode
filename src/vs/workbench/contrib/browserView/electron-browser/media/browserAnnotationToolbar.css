@@ -9,7 +9,10 @@
 	justify-content: center;
 	gap: 2px;
 	padding: 4px 8px;
-	margin: 0 3px;
+	/* Match the browser container's horizontal margin and border radius */
+	width: calc(100% - 6px);
+	margin: 0 auto;
+	box-sizing: border-box;
 	flex-shrink: 0;
 	position: relative;
 	z-index: 10;
