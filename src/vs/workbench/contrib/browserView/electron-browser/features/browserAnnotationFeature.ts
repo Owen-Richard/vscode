@@ -620,13 +620,11 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			const offsetX = e.clientX - toolbarRect.left;
 			const offsetY = e.clientY - toolbarRect.top;
 
-			// Switch from centered to absolute positioning without jumping
-			const parentRect = this._toolbarElement.parentElement?.getBoundingClientRect();
-			if (parentRect) {
-				this._toolbarElement.style.left = (toolbarRect.left - parentRect.left) + 'px';
-				this._toolbarElement.style.top = (toolbarRect.top - parentRect.top) + 'px';
-				this._toolbarElement.style.transform = 'none';
-			}
+			// Convert from CSS centered positioning to explicit left/top
+			// Use the actual rendered position to avoid any jump
+			this._toolbarElement.style.left = this._toolbarElement.offsetLeft + 'px';
+			this._toolbarElement.style.top = this._toolbarElement.offsetTop + 'px';
+			this._toolbarElement.style.transform = 'none';
 
 			// Hide BrowserView during drag so toolbar stays visible
 			this.editor.model?.setVisible(false);
