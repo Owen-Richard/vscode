@@ -617,11 +617,9 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			const win = dom.getWindow(this._toolbarElement);
 			const toolbarRect = this._toolbarElement.getBoundingClientRect();
 			const offsetX = e.clientX - toolbarRect.left;
-			const offsetY = e.clientY - toolbarRect.top;
 
-			// Convert from CSS centered positioning to explicit left/top
+			// Convert from CSS centered positioning to explicit left
 			this._toolbarElement.style.left = this._toolbarElement.offsetLeft + 'px';
-			this._toolbarElement.style.top = this._toolbarElement.offsetTop + 'px';
 			this._toolbarElement.style.transform = 'none';
 
 			dragHandle.style.cursor = 'grabbing';
@@ -633,13 +631,8 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 					return;
 				}
 				const tw = this._toolbarElement.offsetWidth;
-				// Constrain: horizontally within parent, vertically above BrowserView
-				const browserRect = this.editor.browserContainer.getBoundingClientRect();
-				const maxTop = browserRect.top - parentRect.top - this._toolbarElement.offsetHeight - 2;
 				const newLeft = Math.max(0, Math.min(e.clientX - parentRect.left - offsetX, parentRect.width - tw));
-				const newTop = Math.max(0, Math.min(e.clientY - parentRect.top - offsetY, maxTop));
 				this._toolbarElement.style.left = newLeft + 'px';
-				this._toolbarElement.style.top = newTop + 'px';
 			};
 
 			const onMouseUp = () => {
