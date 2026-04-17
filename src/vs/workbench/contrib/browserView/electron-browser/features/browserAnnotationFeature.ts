@@ -8,7 +8,7 @@ import '../media/browserAnnotationToolbar.css';
 import { localize, localize2 } from '../../../../../nls.js';
 import { DisposableStore, MutableDisposable } from '../../../../../base/common/lifecycle.js';
 import { CancellationTokenSource } from '../../../../../base/common/cancellation.js';
-import { $, addDisposableListener } from '../../../../../base/browser/dom.js';
+import * as dom from '../../../../../base/browser/dom.js';
 import { IContextKey, IContextKeyService, RawContextKey, ContextKeyExpr } from '../../../../../platform/contextkey/common/contextkey.js';
 import { Action2, registerAction2 } from '../../../../../platform/actions/common/actions.js';
 import { ServicesAccessor } from '../../../../../platform/instantiation/common/instantiation.js';
@@ -94,33 +94,42 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._hasAnnotationsContext = CONTEXT_BROWSER_HAS_ANNOTATIONS.bindTo(contextKeyService);
 
 		// Build floating toolbar
-		this._toolbarElement = $('.browser-annotation-toolbar');
+		this._toolbarElement = dom.$('.browser-annotation-toolbar');
+
+		// Drag handle
+		const dragHandle = document.createElement('div');
+		dragHandle.className = 'browser-annotation-toolbar-drag';
+		const gripIcon = document.createElement('span');
+		gripIcon.className = 'codicon codicon-gripper';
+		dragHandle.appendChild(gripIcon);
+		this._toolbarElement.appendChild(dragHandle);
+		this._setupDrag(dragHandle);
 
 		this._toggleBtn = this._createButton('codicon-checklist', localize('browser.annotateToggle', "Toggle Annotation Mode"));
 		this._toolbarElement.appendChild(this._toggleBtn);
-		this._register(addDisposableListener(this._toggleBtn, 'click', () => this.toggleAnnotationMode()));
+		this._register(dom.addDisposableListener(this._toggleBtn, 'click', () => this.toggleAnnotationMode()));
 
 		this._toolbarElement.appendChild(this._createSeparator());
 
 		this._manageBtn = this._createButton('codicon-list-ordered', localize('browser.annotateManage', "Manage Annotations"));
 		this._manageBtn.disabled = true;
 		this._toolbarElement.appendChild(this._manageBtn);
-		this._register(addDisposableListener(this._manageBtn, 'click', () => this.manageAnnotations()));
+		this._register(dom.addDisposableListener(this._manageBtn, 'click', () => this.manageAnnotations()));
 
 		this._copyBtn = this._createButton('codicon-copy', localize('browser.annotateCopy', "Copy Annotations"));
 		this._copyBtn.disabled = true;
 		this._toolbarElement.appendChild(this._copyBtn);
-		this._register(addDisposableListener(this._copyBtn, 'click', () => this.copyAnnotations()));
+		this._register(dom.addDisposableListener(this._copyBtn, 'click', () => this.copyAnnotations()));
 
 		this._sendToChatBtn = this._createButton('codicon-comment-discussion', localize('browser.annotateSendToChat', "Send to Chat"));
 		this._sendToChatBtn.disabled = true;
 		this._toolbarElement.appendChild(this._sendToChatBtn);
-		this._register(addDisposableListener(this._sendToChatBtn, 'click', () => this.sendAnnotationsToChat()));
+		this._register(dom.addDisposableListener(this._sendToChatBtn, 'click', () => this.sendAnnotationsToChat()));
 
 		this._clearBtn = this._createButton('codicon-trash', localize('browser.annotateClear', "Clear All"));
 		this._clearBtn.disabled = true;
 		this._toolbarElement.appendChild(this._clearBtn);
-		this._register(addDisposableListener(this._clearBtn, 'click', () => this.clearAnnotations()));
+		this._register(dom.addDisposableListener(this._clearBtn, 'click', () => this.clearAnnotations()));
 	}
 
 	override get toolbarElements(): readonly HTMLElement[] {
@@ -600,6 +609,54 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		const sep = document.createElement('div');
 		sep.className = 'browser-annotation-toolbar-separator';
 		return sep;
+	}
+
+	private _setupDrag(dragHandle: HTMLElement): void {
+		let startX = 0;
+		let startY = 0;
+		let startLeft = 0;
+		let startTop = 0;
+
+		const onMouseDown = (e: MouseEvent) => {
+			e.preventDefault();
+			const win = dom.getWindow(this._toolbarElement);
+			startX = e.clientX;
+			startY = e.clientY;
+			const rect = this._toolbarElement.getBoundingClientRect();
+			const parentRect = this._toolbarElement.parentElement?.getBoundingClientRect();
+			startLeft = rect.left - (parentRect?.left ?? 0);
+			startTop = rect.top - (parentRect?.top ?? 0);
+
+			// Remove centering transform for absolute positioning
+			this._toolbarElement.style.left = startLeft + 'px';
+			this._toolbarElement.style.top = startTop + 'px';
+			this._toolbarElement.style.transform = 'none';
+
+			const onMouseMove = (e: MouseEvent) => {
+				e.preventDefault();
+				const dx = e.clientX - startX;
+				const dy = e.clientY - startY;
+				const parentRect = this._toolbarElement.parentElement?.getBoundingClientRect();
+				const pw = parentRect?.width ?? 800;
+				const ph = parentRect?.height ?? 600;
+				const tw = this._toolbarElement.offsetWidth;
+				const th = this._toolbarElement.offsetHeight;
+				const newLeft = Math.max(0, Math.min(startLeft + dx, pw - tw));
+				const newTop = Math.max(0, Math.min(startTop + dy, ph - th));
+				this._toolbarElement.style.left = newLeft + 'px';
+				this._toolbarElement.style.top = newTop + 'px';
+			};
+
+			const onMouseUp = () => {
+				win.document.removeEventListener('mousemove', onMouseMove);
+				win.document.removeEventListener('mouseup', onMouseUp);
+			};
+
+			win.document.addEventListener('mousemove', onMouseMove);
+			win.document.addEventListener('mouseup', onMouseUp);
+		};
+
+		this._register(dom.addDisposableListener(dragHandle, 'mousedown', onMouseDown));
 	}
 }
 
