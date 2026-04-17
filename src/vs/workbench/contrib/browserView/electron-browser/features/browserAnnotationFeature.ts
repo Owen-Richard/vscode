@@ -65,6 +65,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	// Floating toolbar DOM
 	private readonly _toolbarElement: HTMLElement;
 	private readonly _toggleBtn: HTMLButtonElement;
+	private readonly _statusLabel: HTMLElement;
 	private readonly _copyBtn: HTMLButtonElement;
 	private readonly _sendToChatBtn: HTMLButtonElement;
 	private readonly _manageBtn: HTMLButtonElement;
@@ -91,6 +92,10 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._toggleBtn = this._createButton('codicon-checklist', localize('browser.annotateToggle', "Toggle Annotation Mode"));
 		this._toolbarElement.appendChild(this._toggleBtn);
 		this._register(addDisposableListener(this._toggleBtn, 'click', () => this.toggleAnnotationMode()));
+
+		this._statusLabel = $('.browser-annotation-toolbar-label');
+		this._statusLabel.style.display = 'none';
+		this._toolbarElement.appendChild(this._statusLabel);
 
 		this._toolbarElement.appendChild(this._createSeparator());
 		this._countLabel = $('.browser-annotation-toolbar-count');
@@ -459,6 +464,14 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		// Always show the toolbar when a page is loaded
 		this._toolbarElement.classList.toggle('visible', hasModel);
 		this._toggleBtn.classList.toggle('active', this._annotationModeActive);
+
+		// Status label
+		if (this._annotationModeActive) {
+			this._statusLabel.textContent = localize('browser.annotationModeHint', "Click elements to annotate · Esc to exit");
+			this._statusLabel.style.display = '';
+		} else {
+			this._statusLabel.style.display = 'none';
+		}
 
 		// Show/hide annotation-dependent buttons
 		const annotationDisplay = hasAnnotations ? '' : 'none';
