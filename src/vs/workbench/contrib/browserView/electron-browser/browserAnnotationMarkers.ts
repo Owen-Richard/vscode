@@ -433,12 +433,29 @@ if (!el || isSkip(el)) return;
 var sel = window.getSelection();
 var selectedText = (sel && sel.toString().trim().length > 0) ? sel.toString().trim().slice(0, 500) : undefined;
 
+var styles = getKeyStyles(el);
+
 active = false; clickedElement = el;
 highlight.classList.remove('vis'); tooltip.classList.remove('vis');
 var name = identify(el);
 var rect = el.getBoundingClientRect();
 var mode = selectedText ? 'text' : 'single';
-showPopup(name, e.clientX, rect.bottom + 12, mode, undefined, selectedText);
+showPopup(name, e.clientX, rect.bottom + 12, mode, undefined, selectedText, styles);
+}
+
+function getKeyStyles(el) {
+var cs = window.getComputedStyle(el);
+var props = ['color','font-size','font-weight','font-family','line-height',
+'background-color','border','border-radius','padding','margin',
+'display','position','width','height','opacity'];
+var result = [];
+for (var i = 0; i < props.length; i++) {
+var v = cs.getPropertyValue(props[i]);
+if (v && v !== 'none' && v !== 'normal' && v !== '0px' && v !== 'rgba(0, 0, 0, 0)' && v !== 'auto') {
+result.push(props[i] + ': ' + v + ';');
+}
+}
+return result;
 }
 
 function renderGroupHighlights() {
@@ -479,7 +496,7 @@ finalizeGroup(r0.left + r0.width/2, r0.bottom, null);
 
 var popupEl = null, popupMode = 'single', popupBounds = null, popupSelectedText = null;
 
-function showPopup(elementName, x, y, mode, bounds, selectedText) {
+function showPopup(elementName, x, y, mode, bounds, selectedText, styles) {
 removePopup();
 popupMode = mode || 'single';
 popupBounds = bounds;
@@ -490,10 +507,29 @@ popupEl.id = HOVER_ID + '-popup';
 var headerText = elementName.replace(/</g,'&lt;').replace(/>/g,'&gt;');
 var quoteHtml = selectedText ? '<div style="font-size:11px;font-style:italic;color:rgba(204,204,204,0.6);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4;">&ldquo;' + selectedText.slice(0,60).replace(/</g,'&lt;') + (selectedText.length>60?'...':'') + '&rdquo;</div>' : '';
 
-popupEl.innerHTML = [
-'<div style="display:flex;align-items:center;margin-bottom:6px;">',
-'  <span style="font-size:11px;line-height:1.4;color:rgba(204,204,204,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span>',
+var stylesHtml = '';
+if (styles && styles.length > 0) {
+stylesHtml = [
+'<div style="margin-bottom:6px;">',
+'  <div id="'+HOVER_ID+'-styles-toggle" style="cursor:pointer;font-size:11px;color:rgba(204,204,204,0.6);user-select:none;display:flex;align-items:center;gap:4px;">',
+'    <span id="'+HOVER_ID+'-styles-arrow" style="font-size:9px;transition:transform 0.15s;">&#9654;</span>',
+'    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + headerText + '</span>',
+'  </div>',
+'  <div id="'+HOVER_ID+'-styles-body" style="display:none;margin-top:4px;padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:4px;font-family:Consolas,\\'Courier New\\',monospace;font-size:11px;line-height:1.5;color:#c586c0;overflow-x:auto;max-height:120px;overflow-y:auto;">',
+styles.map(function(s) {
+var parts = s.split(':');
+var prop = parts[0];
+var val = parts.slice(1).join(':');
+return '<div><span style="color:#9cdcfe;">' + prop + '</span>:<span style="color:#ce9178;">' + val + '</span></div>';
+}).join(''),
+'  </div>',
 '</div>',
+].join('');
+}
+
+popupEl.innerHTML = [
+stylesHtml ? '' : '<div style="display:flex;align-items:center;margin-bottom:6px;"><span style="font-size:11px;line-height:1.4;color:rgba(204,204,204,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span></div>',
+stylesHtml,
 quoteHtml,
 '<textarea id="' + HOVER_ID + '-ta" rows="2" placeholder="What should change?" style="',
 '  width:100%;box-sizing:border-box;padding:4px 6px;font-size:13px;line-height:1.4;font-family:inherit;',
@@ -517,6 +553,18 @@ fontSize:'13px', lineHeight:'1.4em',
 animation:'__ah_pop 0.2s ease-out forwards',
 });
 document.body.appendChild(popupEl);
+
+// Accordion toggle for computed styles
+var stToggle = document.getElementById(HOVER_ID+'-styles-toggle');
+var stBody = document.getElementById(HOVER_ID+'-styles-body');
+var stArrow = document.getElementById(HOVER_ID+'-styles-arrow');
+if (stToggle && stBody && stArrow) {
+stToggle.addEventListener('click', function() {
+var open = stBody.style.display !== 'none';
+stBody.style.display = open ? 'none' : 'block';
+stArrow.style.transform = open ? '' : 'rotate(90deg)';
+});
+}
 
 var ta = document.getElementById(HOVER_ID+'-ta');
 var sub = document.getElementById(HOVER_ID+'-submit');
