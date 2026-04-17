@@ -70,6 +70,21 @@ const MARKER_INJECTION_SCRIPT = `
 				-webkit-user-select: none;
 				z-index: 1;
 			}
+			.\${CONTAINER_ID}-marker.enter {
+				animation: __am_in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+			}
+			.\${CONTAINER_ID}-marker.exit {
+				animation: __am_out 0.2s ease-in both;
+				pointer-events: none;
+			}
+			@keyframes __am_in {
+				0% { opacity: 0; transform: translate(-50%, -50%) scale(0.3); }
+				100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+			}
+			@keyframes __am_out {
+				0% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+				100% { opacity: 0; transform: translate(-50%, -50%) scale(0); }
+			}
 			.\${CONTAINER_ID}-marker:hover {
 				transform: translate(-50%, -50%) scale(1.1);
 				z-index: 2;
@@ -85,6 +100,25 @@ const MARKER_INJECTION_SCRIPT = `
 			}
 			.\${CONTAINER_ID}-highlight.vis {
 				opacity: 1;
+			}
+			.\${CONTAINER_ID}-pending {
+				position: absolute;
+				width: 22px;
+				height: 22px;
+				border-radius: 50%;
+				background: #0078d4;
+				color: #fff;
+				font-size: 14px;
+				font-weight: 600;
+				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+				pointer-events: none;
+				transform: translate(-50%, -50%);
+				animation: __am_in 0.25s cubic-bezier(0.22, 1, 0.36, 1) both;
+				z-index: 3;
 			}
 		\`;
 		document.head.appendChild(style);
@@ -148,6 +182,7 @@ const MARKER_INJECTION_SCRIPT = `
 
 	var _currentAnnotations = [];
 	var _resizeListenerActive = false;
+	var _markerClickResolve = null;
 
 	function renderMarkers() {
 		var annotations = _currentAnnotations;
@@ -171,20 +206,63 @@ const MARKER_INJECTION_SCRIPT = `
 			hl.style.height = (rect.height + 4) + 'px';
 			container.appendChild(hl);
 
-			// Numbered marker badge
+			// Numbered marker badge with enter animation
 			const marker = document.createElement('div');
-			marker.className = CONTAINER_ID + '-marker';
+			marker.className = CONTAINER_ID + '-marker enter';
 			marker.textContent = String(annotation.index);
 			marker.title = annotation.comment;
 			marker.style.left = (rect.right + scrollX) + 'px';
 			marker.style.top = (rect.top + scrollY) + 'px';
+			marker.dataset.annotationIndex = String(annotation.index);
 
 			// Show outline on marker hover
 			marker.addEventListener('mouseenter', function() { hl.classList.add('vis'); });
 			marker.addEventListener('mouseleave', function() { hl.classList.remove('vis'); });
 
+			// Click marker to edit (notify VS Code)
+			marker.addEventListener('click', function(e) {
+				e.stopPropagation();
+				if (_markerClickResolve) {
+					_markerClickResolve({ markerIndex: annotation.index });
+					_markerClickResolve = null;
+				}
+			});
+
 			container.appendChild(marker);
 		}
+	}
+
+	function waitForMarkerClick() {
+		return new Promise(function(resolve) { _markerClickResolve = resolve; });
+	}
+
+	// Show a pending "+" marker and outline at the given position
+	function showPending(x, y, w, h) {
+		var container = ensureContainer();
+		// Pending outline
+		var hl = document.createElement('div');
+		hl.className = CONTAINER_ID + '-highlight vis';
+		hl.id = CONTAINER_ID + '-pending-hl';
+		hl.style.left = (x + window.scrollX - 2) + 'px';
+		hl.style.top = (y + window.scrollY - 2) + 'px';
+		hl.style.width = (w + 4) + 'px';
+		hl.style.height = (h + 4) + 'px';
+		container.appendChild(hl);
+		// Pending "+" badge
+		var pending = document.createElement('div');
+		pending.className = CONTAINER_ID + '-pending';
+		pending.id = CONTAINER_ID + '-pending-marker';
+		pending.textContent = '+';
+		pending.style.left = (x + w + window.scrollX) + 'px';
+		pending.style.top = (y + window.scrollY) + 'px';
+		container.appendChild(pending);
+	}
+
+	function clearPending() {
+		var hl = document.getElementById(CONTAINER_ID + '-pending-hl');
+		if (hl) hl.remove();
+		var pm = document.getElementById(CONTAINER_ID + '-pending-marker');
+		if (pm) pm.remove();
 	}
 
 	function clearMarkers() {
@@ -212,7 +290,10 @@ const MARKER_INJECTION_SCRIPT = `
 	window.__annotationMarkers = {
 		update: updateMarkers,
 		clear: clearMarkers,
-		remove: removeAll
+		remove: removeAll,
+		waitForMarkerClick: waitForMarkerClick,
+		showPending: showPending,
+		clearPending: clearPending
 	};
 })();
 `;
@@ -451,6 +532,10 @@ highlight.classList.remove('vis'); tooltip.classList.remove('vis');
 var name = identify(el);
 var rect = el.getBoundingClientRect();
 var mode = selectedText ? 'text' : 'single';
+// Show pending marker + outline while popup is open
+if (window.__annotationMarkers && window.__annotationMarkers.showPending) {
+window.__annotationMarkers.showPending(rect.left, rect.top, rect.width, rect.height);
+}
 showPopup(name, e.clientX, rect.bottom + 12, mode, undefined, selectedText, styles);
 }
 
@@ -600,6 +685,10 @@ if (e.key === 'Escape') { e.preventDefault(); if(can) can.click(); }
 function resolveClick(comment) {
 var result = { comment: comment, mode: popupMode, selectedText: popupSelectedText || undefined, elementBounds: popupBounds || undefined };
 removePopup(); groupElements = [];
+// Clear pending marker + outline
+if (window.__annotationMarkers && window.__annotationMarkers.clearPending) {
+window.__annotationMarkers.clearPending();
+}
 if (clickResolve) { clickResolve(result); clickResolve = null; }
 active = true;
 }
@@ -905,6 +994,42 @@ export class BrowserAnnotationMarkers extends Disposable {
 	resetInjectionState(): void {
 		this._markersInjected = false;
 		this._hoverInjected = false;
+	}
+
+	/**
+	 * Wait for the user to click a marker badge in the page.
+	 * Returns the 1-based annotation index, or undefined if cancelled.
+	 */
+	async waitForMarkerClick(token: CancellationToken): Promise<number | undefined> {
+		try {
+			await this._ensureTracked();
+			await this._ensureMarkersInjected();
+
+			const result = await Promise.race([
+				this._playwrightService.invokeFunctionRaw<{ markerIndex: number }>(
+					this._browserId,
+					`async (page) => {
+						return await page.evaluate(() => {
+							return window.__annotationMarkers?.waitForMarkerClick();
+						});
+					}`,
+				),
+				new Promise<undefined>(resolve => {
+					token.onCancellationRequested(() => resolve(undefined));
+				}),
+			]);
+
+			if (!result || token.isCancellationRequested) {
+				return undefined;
+			}
+
+			return result.markerIndex;
+		} catch (e) {
+			if (!token.isCancellationRequested) {
+				this._logService.warn('BrowserAnnotationMarkers: Error waiting for marker click', e);
+			}
+			return undefined;
+		}
 	}
 
 	private async _ensureTracked(): Promise<void> {
