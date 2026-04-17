@@ -9,9 +9,9 @@
 	justify-content: center;
 	gap: 2px;
 	padding: 4px 8px;
-	/* Match the browser container's horizontal margin and border radius */
+	/* Match browser-container-wrapper spacing and browser-container styling */
 	width: calc(100% - 6px);
-	margin: 0 auto;
+	margin: 1px auto 0;
 	box-sizing: border-box;
 	flex-shrink: 0;
 	position: relative;
