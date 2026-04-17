@@ -17,7 +17,7 @@
 	position: relative;
 	z-index: 10;
 	border: 1px solid var(--vscode-browser-border, var(--vscode-editorWidget-border, transparent));
-	border-radius: var(--vscode-cornerRadius-small);
+	border-radius: calc(var(--vscode-cornerRadius-small) + 1px);
 	background: transparent;
 
 	&.visible {
