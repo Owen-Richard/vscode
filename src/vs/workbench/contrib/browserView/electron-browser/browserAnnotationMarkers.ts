@@ -11,6 +11,26 @@ import { IPlaywrightService } from '../../../../platform/browserView/common/play
 import { IElementData } from '../../../../platform/browserElements/common/browserElements.js';
 
 /**
+ * Theme colors used by injected annotation scripts.
+ * Read from the VS Code theme and injected as CSS custom properties.
+ */
+export interface IAnnotationThemeColors {
+	readonly accentColor: string;
+	readonly accentForeground: string;
+	readonly editorBackground: string;
+	readonly foreground: string;
+	readonly descriptionForeground: string;
+	readonly inputBackground: string;
+	readonly inputBorder: string;
+	readonly focusBorder: string;
+	readonly widgetBorder: string;
+	readonly buttonBackground: string;
+	readonly buttonForeground: string;
+	readonly fontFamily: string;
+	readonly monoFontFamily: string;
+}
+
+/**
  * Result from waiting for a user annotation in the page.
  */
 export interface IAnnotationClickResult {
@@ -53,11 +73,11 @@ const MARKER_INJECTION_SCRIPT = `
 				width: 22px;
 				height: 22px;
 				border-radius: 50%;
-				background: #0078d4;
-				color: #fff;
+				background: var(--ann-accent, #0078d4);
+				color: var(--ann-accent-fg, #fff);
 				font-size: 12px;
 				font-weight: 600;
-				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+				font-family: var(--ann-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
 				display: flex;
 				align-items: center;
 				justify-content: center;
@@ -91,8 +111,8 @@ const MARKER_INJECTION_SCRIPT = `
 			}
 			.\${CONTAINER_ID}-highlight {
 				position: absolute;
-				border: 2px solid rgba(0, 120, 212, 0.6);
-				background: rgba(0, 120, 212, 0.05);
+				border: 2px solid color-mix(in srgb, var(--ann-accent, #0078d4) 60%, transparent);
+				background: color-mix(in srgb, var(--ann-accent, #0078d4) 5%, transparent);
 				border-radius: 4px;
 				pointer-events: none;
 				opacity: 0;
@@ -106,11 +126,11 @@ const MARKER_INJECTION_SCRIPT = `
 				width: 22px;
 				height: 22px;
 				border-radius: 50%;
-				background: #0078d4;
-				color: #fff;
+				background: var(--ann-accent, #0078d4);
+				color: var(--ann-accent-fg, #fff);
 				font-size: 14px;
 				font-weight: 600;
-				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+				font-family: var(--ann-font, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
 				display: flex;
 				align-items: center;
 				justify-content: center;
@@ -169,13 +189,22 @@ const MARKER_INJECTION_SCRIPT = `
 		return null;
 	}
 
+	var _rafId = null;
+	function renderMarkersDebounced() {
+		if (_rafId) return;
+		_rafId = requestAnimationFrame(function() {
+			_rafId = null;
+			renderMarkers();
+		});
+	}
+
 	function updateMarkers(annotations) {
 		ensureStyles();
 		_currentAnnotations = annotations;
 		renderMarkers();
 		if (!_resizeListenerActive) {
-			window.addEventListener('resize', renderMarkers);
-			window.addEventListener('scroll', renderMarkers);
+			window.addEventListener('resize', renderMarkersDebounced, { passive: true });
+			window.addEventListener('scroll', renderMarkersDebounced, { passive: true });
 			_resizeListenerActive = true;
 		}
 	}
@@ -204,6 +233,7 @@ const MARKER_INJECTION_SCRIPT = `
 			hl.style.top = (rect.top + scrollY - 2) + 'px';
 			hl.style.width = (rect.width + 4) + 'px';
 			hl.style.height = (rect.height + 4) + 'px';
+			hl.setAttribute('aria-hidden', 'true');
 			container.appendChild(hl);
 
 			// Numbered marker badge with enter animation
@@ -214,6 +244,9 @@ const MARKER_INJECTION_SCRIPT = `
 			marker.style.left = (rect.right + scrollX) + 'px';
 			marker.style.top = (rect.top + scrollY) + 'px';
 			marker.dataset.annotationIndex = String(annotation.index);
+			marker.setAttribute('role', 'button');
+			marker.setAttribute('tabindex', '0');
+			marker.setAttribute('aria-label', 'Annotation ' + annotation.index + ': ' + (annotation.comment || ''));
 
 			// Show outline on marker hover
 			marker.addEventListener('mouseenter', function() { hl.classList.add('vis'); });
@@ -225,6 +258,12 @@ const MARKER_INJECTION_SCRIPT = `
 				if (_markerClickResolve) {
 					_markerClickResolve({ markerIndex: annotation.index });
 					_markerClickResolve = null;
+				}
+			});
+			marker.addEventListener('keydown', function(e) {
+				if (e.key === 'Enter' || e.key === ' ') {
+					e.preventDefault();
+					marker.click();
 				}
 			});
 
@@ -275,15 +314,18 @@ const MARKER_INJECTION_SCRIPT = `
 
 	function removeAll() {
 		_currentAnnotations = [];
+		if (_rafId) { cancelAnimationFrame(_rafId); _rafId = null; }
 		if (_resizeListenerActive) {
-			window.removeEventListener('resize', renderMarkers);
-			window.removeEventListener('scroll', renderMarkers);
+			window.removeEventListener('resize', renderMarkersDebounced);
+			window.removeEventListener('scroll', renderMarkersDebounced);
 			_resizeListenerActive = false;
 		}
 		const container = document.getElementById(CONTAINER_ID);
 		if (container) container.remove();
 		const style = document.getElementById(STYLE_ID);
 		if (style) style.remove();
+		const theme = document.getElementById('__vscode-annotation-theme');
+		if (theme) theme.remove();
 		delete window.__annotationMarkers;
 	}
 
@@ -313,29 +355,29 @@ if (window.__annotationHover) return;
 
 const HOVER_ID = '__vscode-annotation-hover';
 const STYLE_ID = '__vscode-annotation-hover-style';
-const DRAG_THRESHOLD = 5;
-const ELEMENT_UPDATE_THROTTLE = 50;
+const DRAG_THRESHOLD = 5; // px of mouse movement before starting area drag
+const ELEMENT_UPDATE_THROTTLE = 50; // ms between querySelectorAll calls during drag
 
 function ensureStyles() {
 if (document.getElementById(STYLE_ID)) return;
 const s = document.createElement('style');
 s.id = STYLE_ID;
 s.textContent = [
-'.' + HOVER_ID + '-hl { position:fixed; border:2px solid rgba(0,120,212,0.5); border-radius:4px;',
-'  background:rgba(0,120,212,0.04); pointer-events:none; box-sizing:border-box; z-index:2147483645;',
+'.' + HOVER_ID + '-hl { position:fixed; border:2px solid color-mix(in srgb, var(--ann-accent, #0078d4) 50%, transparent); border-radius:4px;',
+'  background:color-mix(in srgb, var(--ann-accent, #0078d4) 4%, transparent); pointer-events:none; box-sizing:border-box; z-index:2147483645;',
 '  display:none; transition:top .06s ease-out,left .06s ease-out,width .06s ease-out,height .06s ease-out; }',
 '.' + HOVER_ID + '-hl.vis { display:block; animation:__ah_in .12s ease-out forwards; }',
 '@keyframes __ah_in { from{opacity:0;transform:scale(.98)} to{opacity:1;transform:scale(1)} }',
-'.' + HOVER_ID + '-tt { position:fixed; font:500 11px/1.3 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;',
+'.' + HOVER_ID + '-tt { position:fixed; font:500 11px/1.3 var(--ann-font, -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif);',
 '  color:#fff; background:rgba(0,0,0,.85); padding:4px 8px; border-radius:6px; pointer-events:none;',
 '  white-space:nowrap; max-width:280px; overflow:hidden; text-overflow:ellipsis; z-index:2147483645; display:none; }',
 '.' + HOVER_ID + '-tt.vis { display:block; animation:__ah_tt .1s ease-out forwards; }',
 '@keyframes __ah_tt { from{opacity:0;transform:scale(.95) translateY(4px)} to{opacity:1;transform:scale(1) translateY(0)} }',
-'.' + HOVER_ID + '-drag { position:fixed; border:2px dashed rgba(0,120,212,0.8); border-radius:4px;',
-'  background:rgba(0,120,212,0.1); pointer-events:none; z-index:2147483645; display:none; }',
+'.' + HOVER_ID + '-drag { position:fixed; border:2px dashed color-mix(in srgb, var(--ann-accent, #0078d4) 80%, transparent); border-radius:4px;',
+'  background:color-mix(in srgb, var(--ann-accent, #0078d4) 10%, transparent); pointer-events:none; z-index:2147483645; display:none; }',
 '.' + HOVER_ID + '-drag.vis { display:block; }',
-'.' + HOVER_ID + '-ghl { position:fixed; border:2px solid rgba(0,120,212,0.7); border-radius:3px;',
-'  background:rgba(0,120,212,0.12); pointer-events:none; z-index:2147483644; }',
+'.' + HOVER_ID + '-ghl { position:fixed; border:2px solid color-mix(in srgb, var(--ann-accent, #0078d4) 70%, transparent); border-radius:3px;',
+'  background:color-mix(in srgb, var(--ann-accent, #0078d4) 12%, transparent); pointer-events:none; z-index:2147483644; }',
 '@keyframes __ah_pop { from{opacity:0;transform:translateX(-50%) scale(.95) translateY(4px)}',
 '  to{opacity:1;transform:translateX(-50%) scale(1) translateY(0)} }',
 '@keyframes __ah_shake { 0%,100%{transform:translateX(-50%)} 25%{transform:translateX(calc(-50% + 3px))}',
@@ -418,7 +460,7 @@ tooltip.classList.add('vis');
 function onScroll() {
 isScrolling = true;
 if (scrollTimeout) clearTimeout(scrollTimeout);
-scrollTimeout = setTimeout(function() { isScrolling = false; }, 150);
+scrollTimeout = setTimeout(function() { isScrolling = false; }, 150); // debounce scroll events
 }
 
 function onMouseDown(e) {
@@ -455,8 +497,8 @@ clearGroupHighlights();
 document.querySelectorAll(MEANINGFUL_SELECTOR).forEach(function(el) {
 if (isOurs(el)) return;
 const r = el.getBoundingClientRect();
-if (r.width < 10 || r.height < 10) return;
-if (r.width > window.innerWidth * 0.8 && r.height > window.innerHeight * 0.5) return;
+if (r.width < 10 || r.height < 10) return; // skip tiny elements
+if (r.width > window.innerWidth * 0.8 && r.height > window.innerHeight * 0.5) return; // skip full-page containers
 if (r.left < right && r.right > left && r.top < bottom && r.bottom > top) {
 const h = document.createElement('div'); h.className = HOVER_ID + '-ghl';
 h.style.left = r.left+'px'; h.style.top = r.top+'px';
@@ -478,12 +520,14 @@ const matches = [];
 document.querySelectorAll(MEANINGFUL_SELECTOR).forEach(function(el) {
 if (isOurs(el)) return;
 const r = el.getBoundingClientRect();
-if (r.width < 10 || r.height < 10) return;
-if (r.width > window.innerWidth * 0.8 && r.height > window.innerHeight * 0.5) return;
+if (r.width < 10 || r.height < 10) return; // skip tiny elements
+if (r.width > window.innerWidth * 0.8 && r.height > window.innerHeight * 0.5) return; // skip full-page containers
 if (r.left < right && r.right > left && r.top < bottom && r.bottom > top) {
 matches.push({ el: el, rect: r });
 }
 });
+// Filter out parent elements that contain other matches (prefer leaf nodes).
+// O(n²) but n is typically small (visible interactive elements in drag area).
 var final = matches.filter(function(m) { return !matches.some(function(o) { return o.el !== m.el && m.el.contains(o.el); }); });
 dragRect.classList.remove('vis'); clearGroupHighlights();
 isDragging = false; dragStart = null; mouseDownPos = null;
@@ -600,18 +644,20 @@ popupSelectedText = selectedText;
 
 popupEl = document.createElement('div');
 popupEl.id = HOVER_ID + '-popup';
+popupEl.setAttribute('role', 'dialog');
+popupEl.setAttribute('aria-label', 'Add annotation');
 var headerText = elementName.replace(/</g,'&lt;').replace(/>/g,'&gt;');
-var quoteHtml = selectedText ? '<div style="font-size:11px;font-style:italic;color:rgba(204,204,204,0.6);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4;">&ldquo;' + selectedText.slice(0,60).replace(/</g,'&lt;') + (selectedText.length>60?'...':'') + '&rdquo;</div>' : '';
+var quoteHtml = selectedText ? '<div style="font-size:11px;font-style:italic;color:var(--ann-desc-fg, rgba(204,204,204,0.6));margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4;">&ldquo;' + selectedText.slice(0,60).replace(/</g,'&lt;') + (selectedText.length>60?'...':'') + '&rdquo;</div>' : '';
 
 var stylesHtml = '';
 if (styles && styles.length > 0) {
 stylesHtml = [
 '<div style="margin-bottom:6px;">',
-'  <div id="'+HOVER_ID+'-styles-toggle" style="cursor:pointer;font-size:11px;color:rgba(204,204,204,0.6);user-select:none;display:flex;align-items:center;gap:4px;">',
+'  <div id="'+HOVER_ID+'-styles-toggle" style="cursor:pointer;font-size:11px;color:var(--ann-desc-fg, rgba(204,204,204,0.6));user-select:none;display:flex;align-items:center;gap:4px;">',
 '    <span id="'+HOVER_ID+'-styles-arrow" style="font-size:9px;transition:transform 0.15s;">&#9654;</span>',
 '    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + headerText + '</span>',
 '  </div>',
-'  <div id="'+HOVER_ID+'-styles-body" style="display:none;margin-top:4px;padding:6px 8px;background:rgba(0,0,0,0.2);border-radius:4px;font-family:Consolas,\\'Courier New\\',monospace;font-size:11px;line-height:1.5;color:#c586c0;overflow-x:auto;max-height:120px;overflow-y:auto;">',
+'  <div id="'+HOVER_ID+'-styles-body" style="display:none;margin-top:4px;padding:6px 8px;background:color-mix(in srgb, var(--ann-editor-bg, #252526) 80%, transparent);border-radius:4px;font-family:var(--ann-mono-font, Consolas,\\'Courier New\\',monospace);font-size:11px;line-height:1.5;color:var(--ann-desc-fg, #c586c0);overflow-x:auto;max-height:120px;overflow-y:auto;">',
 styles.map(function(s) {
 var parts = s.split(':');
 var prop = parts[0];
@@ -624,27 +670,27 @@ return '<div><span style="color:#9cdcfe;">' + prop + '</span>:<span style="color
 }
 
 popupEl.innerHTML = [
-stylesHtml ? '' : '<div style="display:flex;align-items:center;margin-bottom:6px;"><span style="font-size:11px;line-height:1.4;color:rgba(204,204,204,0.6);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span></div>',
+stylesHtml ? '' : '<div style="display:flex;align-items:center;margin-bottom:6px;"><span style="font-size:11px;line-height:1.4;color:var(--ann-desc-fg, rgba(204,204,204,0.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span></div>',
 stylesHtml,
 quoteHtml,
-'<textarea id="' + HOVER_ID + '-ta" rows="2" placeholder="What should change?" style="',
+'<textarea id="' + HOVER_ID + '-ta" rows="2" aria-label="Annotation comment" placeholder="What should change?" style="',
 '  width:100%;box-sizing:border-box;padding:4px 6px;font-size:13px;line-height:1.4;font-family:inherit;',
-'  background:#3c3c3c;color:#ccc;border:1px solid #3c3c3c;',
+'  background:var(--ann-input-bg, #3c3c3c);color:var(--ann-fg, #ccc);border:1px solid var(--ann-input-border, #3c3c3c);',
 '  border-radius:4px;resize:none;outline:none;"></textarea>',
 '<div style="display:flex;justify-content:flex-end;gap:4px;margin-top:8px;">',
-'  <button id="'+HOVER_ID+'-cancel" style="padding:4px 8px;font-size:12px;line-height:16px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#ccc;cursor:pointer;font-family:inherit;">Cancel</button>',
-'  <button id="'+HOVER_ID+'-submit" style="padding:4px 8px;font-size:12px;line-height:16px;border-radius:4px;border:1px solid transparent;background:#0078d4;color:#fff;cursor:pointer;opacity:0.4;font-family:inherit;">Add</button>',
+'  <button id="'+HOVER_ID+'-cancel" aria-label="Cancel" style="padding:4px 8px;font-size:12px;line-height:16px;border-radius:4px;border:1px solid var(--ann-widget-border, rgba(255,255,255,0.1));background:transparent;color:var(--ann-fg, #ccc);cursor:pointer;font-family:inherit;">Cancel</button>',
+'  <button id="'+HOVER_ID+'-submit" aria-label="Add annotation" style="padding:4px 8px;font-size:12px;line-height:16px;border-radius:4px;border:1px solid transparent;background:var(--ann-btn-bg, #0078d4);color:var(--ann-btn-fg, #fff);cursor:pointer;opacity:0.4;font-family:inherit;">Add</button>',
 '</div>',
 ].join('');
 
 Object.assign(popupEl.style, {
 position:'fixed', left:Math.max(140,Math.min(x,window.innerWidth-140))+'px',
 top:Math.min(y,window.innerHeight-180)+'px', transform:'translateX(-50%)',
-width:'264px', padding:'8px', background:'#252526', borderRadius:'8px',
-border:'1px solid #454545',
+width:'264px', padding:'8px', background:'var(--ann-editor-bg, #252526)', borderRadius:'8px',
+border:'1px solid var(--ann-widget-border, #454545)',
 boxShadow:'0 0 20px rgba(0,0,0,0.15)',
 zIndex:'2147483647',
-fontFamily:'-apple-system,BlinkMacSystemFont,"Segoe WPC","Segoe UI",system-ui,"Ubuntu","Droid Sans",sans-serif',
+fontFamily:'var(--ann-font, -apple-system,BlinkMacSystemFont,"Segoe WPC","Segoe UI",system-ui,"Ubuntu","Droid Sans",sans-serif)',
 fontSize:'13px', lineHeight:'1.4em',
 animation:'__ah_pop 0.2s ease-out forwards',
 });
@@ -667,8 +713,8 @@ var sub = document.getElementById(HOVER_ID+'-submit');
 var can = document.getElementById(HOVER_ID+'-cancel');
 setTimeout(function() { if(ta) ta.focus(); }, 50);
 if(ta) ta.addEventListener('input', function() { if (sub) sub.style.opacity = ta.value.trim() ? '1' : '0.4'; });
-if(ta) ta.addEventListener('focus', function() { ta.style.borderColor = '#007acc'; });
-if(ta) ta.addEventListener('blur', function() { ta.style.borderColor = '#3c3c3c'; });
+if(ta) ta.addEventListener('focus', function() { ta.style.borderColor = 'var(--ann-focus-border, #007acc)'; });
+if(ta) ta.addEventListener('blur', function() { ta.style.borderColor = 'var(--ann-input-border, #3c3c3c)'; });
 
 if(sub) sub.addEventListener('click', function() {
 var comment = ta ? ta.value.trim() : '';
@@ -728,6 +774,7 @@ if (highlight) { highlight.remove(); highlight = null; }
 if (tooltip) { tooltip.remove(); tooltip = null; }
 if (dragRect) { dragRect.remove(); dragRect = null; }
 var st = document.getElementById(STYLE_ID); if (st) st.remove();
+var theme = document.getElementById('__vscode-annotation-theme'); if (theme) theme.remove();
 delete window.__annotationHover;
 }
 
@@ -745,6 +792,7 @@ export class BrowserAnnotationMarkers extends Disposable {
 
 	private _markersInjected = false;
 	private _hoverInjected = false;
+	private _themeColors: IAnnotationThemeColors | undefined;
 
 	constructor(
 		private readonly _browserId: string,
@@ -752,6 +800,16 @@ export class BrowserAnnotationMarkers extends Disposable {
 		private readonly _logService: ILogService,
 	) {
 		super();
+	}
+
+	setThemeColors(colors: IAnnotationThemeColors): void {
+		this._themeColors = colors;
+	}
+
+	override dispose(): void {
+		this.removeAll().catch(e => this._logService.warn('BrowserAnnotationMarkers: Cleanup on dispose failed', e));
+		this.removeHoverOverlay().catch(e => this._logService.warn('BrowserAnnotationMarkers: Hover cleanup on dispose failed', e));
+		super.dispose();
 	}
 
 	/**
@@ -1043,6 +1101,7 @@ export class BrowserAnnotationMarkers extends Disposable {
 		if (!this._markersInjected) {
 			await this._injectScript(MARKER_INJECTION_SCRIPT);
 			this._markersInjected = true;
+			await this._injectThemeVariables();
 		}
 	}
 
@@ -1050,7 +1109,44 @@ export class BrowserAnnotationMarkers extends Disposable {
 		if (!this._hoverInjected) {
 			await this._injectScript(HOVER_OVERLAY_SCRIPT);
 			this._hoverInjected = true;
+			await this._injectThemeVariables();
 		}
+	}
+
+	private async _injectThemeVariables(): Promise<void> {
+		if (!this._themeColors) {
+			return;
+		}
+		const colors = this._themeColors;
+		await this._playwrightService.invokeFunctionRaw(
+			this._browserId,
+			`async (page, c) => {
+				await page.evaluate((c) => {
+					let style = document.getElementById('__vscode-annotation-theme');
+					if (!style) {
+						style = document.createElement('style');
+						style.id = '__vscode-annotation-theme';
+						document.head.appendChild(style);
+					}
+					style.textContent = ':root {' +
+						'--ann-accent:' + c.accentColor + ';' +
+						'--ann-accent-fg:' + c.accentForeground + ';' +
+						'--ann-editor-bg:' + c.editorBackground + ';' +
+						'--ann-fg:' + c.foreground + ';' +
+						'--ann-desc-fg:' + c.descriptionForeground + ';' +
+						'--ann-input-bg:' + c.inputBackground + ';' +
+						'--ann-input-border:' + c.inputBorder + ';' +
+						'--ann-focus-border:' + c.focusBorder + ';' +
+						'--ann-widget-border:' + c.widgetBorder + ';' +
+						'--ann-btn-bg:' + c.buttonBackground + ';' +
+						'--ann-btn-fg:' + c.buttonForeground + ';' +
+						'--ann-font:' + c.fontFamily + ';' +
+						'--ann-mono-font:' + c.monoFontFamily + ';' +
+					'}';
+				}, c);
+			}`,
+			colors,
+		);
 	}
 
 	private async _injectScript(script: string): Promise<void> {

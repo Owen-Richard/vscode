@@ -32,9 +32,11 @@ import { BROWSER_EDITOR_ACTIVE, BrowserActionCategory } from '../browserViewActi
 import { IBrowserViewModel } from '../../common/browserView.js';
 import { IBrowserAnnotation, BrowserAnnotationDetailLevel, createBrowserAnnotation } from '../../common/browserAnnotation.js';
 import { generateAnnotationOutput } from '../browserAnnotationOutput.js';
-import { BrowserAnnotationMarkers } from '../browserAnnotationMarkers.js';
+import { BrowserAnnotationMarkers, IAnnotationThemeColors } from '../browserAnnotationMarkers.js';
 import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
 import { createElementContextValue } from '../../../../../platform/browserElements/common/browserElements.js';
+import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
+import { editorBackground, foreground, descriptionForeground, inputBackground, inputBorder, focusBorder, buttonBackground, buttonForeground, editorWidgetBorder } from '../../../../../platform/theme/common/colorRegistry.js';
 
 // -- Context Keys ----------------------------------------------------------
 
@@ -88,6 +90,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		@IPlaywrightService private readonly playwrightService: IPlaywrightService,
 		@IConfigurationService private readonly configurationService: IConfigurationService,
 		@IStorageService private readonly storageService: IStorageService,
+		@IThemeService private readonly themeService: IThemeService,
 	) {
 		super(editor);
 		this._annotationModeContext = CONTEXT_BROWSER_ANNOTATION_MODE_ACTIVE.bindTo(contextKeyService);
@@ -141,6 +144,29 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		const markers = new BrowserAnnotationMarkers(model.id, this.playwrightService, this.logService);
 		this._markers.value = markers;
 		store.add(markers);
+
+		// Pass theme colors to injected scripts
+		const updateThemeColors = () => {
+			const theme = this.themeService.getColorTheme();
+			const colors: IAnnotationThemeColors = {
+				accentColor: theme.getColor(buttonBackground)?.toString() ?? '#0078d4',
+				accentForeground: theme.getColor(buttonForeground)?.toString() ?? '#ffffff',
+				editorBackground: theme.getColor(editorBackground)?.toString() ?? '#1e1e1e',
+				foreground: theme.getColor(foreground)?.toString() ?? '#cccccc',
+				descriptionForeground: theme.getColor(descriptionForeground)?.toString() ?? 'rgba(204,204,204,0.6)',
+				inputBackground: theme.getColor(inputBackground)?.toString() ?? '#3c3c3c',
+				inputBorder: theme.getColor(inputBorder)?.toString() ?? '#3c3c3c',
+				focusBorder: theme.getColor(focusBorder)?.toString() ?? '#007acc',
+				widgetBorder: theme.getColor(editorWidgetBorder)?.toString() ?? '#454545',
+				buttonBackground: theme.getColor(buttonBackground)?.toString() ?? '#0078d4',
+				buttonForeground: theme.getColor(buttonForeground)?.toString() ?? '#ffffff',
+				fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+				monoFontFamily: 'Consolas, "Courier New", monospace',
+			};
+			markers.setThemeColors(colors);
+		};
+		updateThemeColors();
+		store.add(this.themeService.onDidColorThemeChange(updateThemeColors));
 
 		// Load persisted annotations for the current URL
 		this._currentUrl = model.url;
@@ -567,8 +593,8 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			try {
 				const parsed = JSON.parse(raw) as IBrowserAnnotation[];
 				this._annotations.push(...parsed);
-			} catch {
-				// Corrupted data — discard
+			} catch (e) {
+				this.logService.warn('BrowserAnnotationFeature: Failed to parse stored annotations', e);
 			}
 		}
 		this._updateHasAnnotationsContext();
@@ -587,6 +613,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		// Always show the toolbar when a page is loaded
 		this._toolbarElement.classList.toggle('visible', hasModel);
 		this._toggleBtn.classList.toggle('active', this._annotationModeActive);
+		this._toggleBtn.setAttribute('aria-pressed', String(this._annotationModeActive));
 
 		// Disable (not hide) buttons when no annotations
 		this._manageBtn.disabled = !hasAnnotations;
