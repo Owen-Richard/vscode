@@ -68,7 +68,6 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private readonly _annotationModeContext: IContextKey<boolean>;
 	private readonly _hasAnnotationsContext: IContextKey<boolean>;
 	private readonly _markers = this._register(new MutableDisposable<BrowserAnnotationMarkers>());
-	private _toolbarOverlapsBrowser = false;
 
 	// Floating toolbar DOM
 	private readonly _toolbarElement: HTMLElement;
@@ -621,13 +620,10 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			const offsetY = e.clientY - toolbarRect.top;
 
 			// Convert from CSS centered positioning to explicit left/top
-			// Use the actual rendered position to avoid any jump
 			this._toolbarElement.style.left = this._toolbarElement.offsetLeft + 'px';
 			this._toolbarElement.style.top = this._toolbarElement.offsetTop + 'px';
 			this._toolbarElement.style.transform = 'none';
 
-			// Hide BrowserView during drag so toolbar stays visible
-			this.editor.model?.setVisible(false);
 			dragHandle.style.cursor = 'grabbing';
 
 			const onMouseMove = (e: MouseEvent) => {
@@ -637,16 +633,17 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 					return;
 				}
 				const tw = this._toolbarElement.offsetWidth;
-				const th = this._toolbarElement.offsetHeight;
+				// Constrain: horizontally within parent, vertically above BrowserView
+				const browserRect = this.editor.browserContainer.getBoundingClientRect();
+				const maxTop = browserRect.top - parentRect.top - this._toolbarElement.offsetHeight - 2;
 				const newLeft = Math.max(0, Math.min(e.clientX - parentRect.left - offsetX, parentRect.width - tw));
-				const newTop = Math.max(0, Math.min(e.clientY - parentRect.top - offsetY, parentRect.height - th));
+				const newTop = Math.max(0, Math.min(e.clientY - parentRect.top - offsetY, maxTop));
 				this._toolbarElement.style.left = newLeft + 'px';
 				this._toolbarElement.style.top = newTop + 'px';
 			};
 
 			const onMouseUp = () => {
 				dragHandle.style.cursor = '';
-				this._updateBrowserVisibilityForToolbar();
 				win.document.removeEventListener('mousemove', onMouseMove);
 				win.document.removeEventListener('mouseup', onMouseUp);
 			};
@@ -656,34 +653,6 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		};
 
 		this._register(dom.addDisposableListener(dragHandle, 'mousedown', onMouseDown));
-	}
-
-	/**
-	 * Check if the toolbar overlaps the browser container area.
-	 * If it does, keep the BrowserView hidden so the toolbar stays visible.
-	 */
-	private _updateBrowserVisibilityForToolbar(): void {
-		const toolbarRect = this._toolbarElement.getBoundingClientRect();
-		const browserRect = this.editor.browserContainer.getBoundingClientRect();
-
-		const overlaps = !(
-			toolbarRect.right < browserRect.left ||
-			toolbarRect.left > browserRect.right ||
-			toolbarRect.bottom < browserRect.top ||
-			toolbarRect.top > browserRect.bottom
-		);
-
-		if (overlaps !== this._toolbarOverlapsBrowser) {
-			this._toolbarOverlapsBrowser = overlaps;
-		}
-
-		if (overlaps) {
-			// Keep BrowserView hidden — toolbar is over it
-			this.editor.model?.setVisible(false);
-		} else {
-			// Toolbar is above the browser area — restore BrowserView
-			this.editor.model?.setVisible(true);
-		}
 	}
 }
 
