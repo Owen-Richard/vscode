@@ -449,6 +449,7 @@ let lastElementUpdate = 0;
 let scrollTimeout = null, isScrolling = false;
 
 function ensureElements() {
+ensureStyles();
 if (!highlight) { highlight = document.createElement('div'); highlight.className = HOVER_ID + '-hl'; document.body.appendChild(highlight); }
 if (!tooltip) { tooltip = document.createElement('div'); tooltip.className = HOVER_ID + '-tt'; document.body.appendChild(tooltip); }
 if (!dragRect) { dragRect = document.createElement('div'); dragRect.className = HOVER_ID + '-drag'; document.body.appendChild(dragRect); }
@@ -846,6 +847,7 @@ return null;
 }
 
 function showEditPopup(data) {
+ensureStyles();
 removePopup();
 active = false;
 if (highlight) highlight.classList.remove('vis');
@@ -871,10 +873,31 @@ popupEl.setAttribute('aria-label', 'Edit annotation');
 var headerText = ('#' + data.index + ' ' + (data.elementName || 'element')).replace(/</g, '&lt;').replace(/>/g, '&gt;');
 var trashSvg = '<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M10 3h3v1h-1v9c0 .6-.4 1-1 1H5c-.6 0-1-.4-1-1V4H3V3h3V2c0-.6.4-1 1-1h2c.6 0 1 .4 1 1v1zm-1-1H7v1h2V2zM5 4v9h6V4H5zm1 2h1v5H6V6zm2 0h1v5H8V6z"/></svg>';
 
-popupEl.innerHTML = [
-'<div style="display:flex;align-items:center;margin-bottom:6px;">',
-'  <span style="font-size:11px;line-height:1.4;color:var(--ann-desc-fg, rgba(204,204,204,0.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span>',
+// Get computed styles from element for accordion
+var styles = targetEl ? getKeyStyles(targetEl) : [];
+var stylesHtml = '';
+if (styles.length > 0) {
+stylesHtml = [
+'<div style="margin-bottom:6px;">',
+'  <div id="'+HOVER_ID+'-styles-toggle" style="cursor:pointer;font-size:11px;color:var(--ann-desc-fg, rgba(204,204,204,0.6));user-select:none;display:flex;align-items:center;gap:4px;">',
+'    <span id="'+HOVER_ID+'-styles-arrow" style="font-size:9px;transition:transform 0.15s;">&#9654;</span>',
+'    <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + headerText + '</span>',
+'  </div>',
+'  <div id="'+HOVER_ID+'-styles-body" style="display:none;margin-top:4px;padding:6px 8px;background:color-mix(in srgb, var(--ann-editor-bg, #252526) 80%, transparent);border-radius:4px;font-family:var(--ann-mono-font, Consolas,\\'Courier New\\',monospace);font-size:11px;line-height:1.5;color:var(--ann-desc-fg, #c586c0);overflow-x:auto;max-height:120px;overflow-y:auto;">',
+styles.map(function(s) {
+var parts = s.split(':');
+var prop = parts[0];
+var val = parts.slice(1).join(':');
+return '<div><span style="color:#9cdcfe;">' + prop + '</span>:<span style="color:#ce9178;">' + val + '</span></div>';
+}).join(''),
+'  </div>',
 '</div>',
+].join('');
+}
+
+popupEl.innerHTML = [
+stylesHtml ? '' : '<div style="display:flex;align-items:center;margin-bottom:6px;"><span style="font-size:11px;line-height:1.4;color:var(--ann-desc-fg, rgba(204,204,204,0.6));white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:248px;">' + headerText + '</span></div>',
+stylesHtml,
 '<textarea id="' + HOVER_ID + '-ta" rows="3" aria-label="Annotation comment" style="',
 '  width:100%;box-sizing:border-box;padding:4px 6px;font-size:13px;line-height:1.4;font-family:inherit;',
 '  background:var(--ann-input-bg, #3c3c3c);color:var(--ann-fg, #ccc);border:1px solid var(--ann-input-border, #3c3c3c);',
@@ -907,6 +930,18 @@ fontSize: '13px', lineHeight: '1.4em',
 animation: '__ah_pop 0.2s ease-out forwards',
 });
 document.body.appendChild(popupEl);
+
+// Accordion toggle for computed styles
+var stToggle = document.getElementById(HOVER_ID+'-styles-toggle');
+var stBody = document.getElementById(HOVER_ID+'-styles-body');
+var stArrow = document.getElementById(HOVER_ID+'-styles-arrow');
+if (stToggle && stBody && stArrow) {
+stToggle.addEventListener('click', function() {
+var open = stBody.style.display !== 'none';
+stBody.style.display = open ? 'none' : 'block';
+stArrow.style.transform = open ? '' : 'rotate(90deg)';
+});
+}
 
 var ta = document.getElementById(HOVER_ID + '-ta');
 var sub = document.getElementById(HOVER_ID + '-submit');
