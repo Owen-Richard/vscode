@@ -27,10 +27,11 @@ import { ChatContextKeys } from '../../../chat/common/actions/chatContextKeys.js
 
 import { BrowserEditor, BrowserEditorContribution, CONTEXT_BROWSER_HAS_URL, CONTEXT_BROWSER_HAS_ERROR } from '../browserEditor.js';
 import { BROWSER_EDITOR_ACTIVE, BrowserActionCategory } from '../browserViewActions.js';
-import { IBrowserViewCDPService, IBrowserViewModel } from '../../common/browserView.js';
+import { IBrowserViewModel } from '../../common/browserView.js';
 import { IBrowserAnnotation, BrowserAnnotationDetailLevel, createBrowserAnnotation } from '../../common/browserAnnotation.js';
 import { generateAnnotationOutput } from '../browserAnnotationOutput.js';
 import { BrowserAnnotationMarkers } from '../browserAnnotationMarkers.js';
+import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
 
 // -- Context Keys ----------------------------------------------------------
 
@@ -80,7 +81,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		@IClipboardService private readonly clipboardService: IClipboardService,
 		@IChatWidgetService private readonly chatWidgetService: IChatWidgetService,
 		@INotificationService private readonly notificationService: INotificationService,
-		@IBrowserViewCDPService private readonly cdpService: IBrowserViewCDPService,
+		@IPlaywrightService private readonly playwrightService: IPlaywrightService,
 	) {
 		super(editor);
 		this._annotationModeContext = CONTEXT_BROWSER_ANNOTATION_MODE_ACTIVE.bindTo(contextKeyService);
@@ -129,7 +130,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 	protected override subscribeToModel(model: IBrowserViewModel, store: DisposableStore): void {
 		// Create markers instance for this browser view
-		const markers = new BrowserAnnotationMarkers(model.id, this.cdpService, this.logService);
+		const markers = new BrowserAnnotationMarkers(model.id, this.playwrightService, this.logService);
 		this._markers.value = markers;
 		store.add(markers);
 

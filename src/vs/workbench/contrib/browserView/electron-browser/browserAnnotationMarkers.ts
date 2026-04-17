@@ -4,9 +4,9 @@
  *--------------------------------------------------------------------------------------------*/
 
 import { Disposable } from '../../../../base/common/lifecycle.js';
-import { IBrowserViewCDPService } from '../common/browserView.js';
 import { IBrowserAnnotation } from '../common/browserAnnotation.js';
 import { ILogService } from '../../../../platform/log/common/log.js';
+import { IPlaywrightService } from '../../../../platform/browserView/common/playwrightService.js';
 
 /**
  * Self-contained JavaScript that gets injected into the target browser page
@@ -174,16 +174,15 @@ const MARKER_INJECTION_SCRIPT = `
 `;
 
 /**
- * Manages annotation markers injected into the browser page via CDP.
+ * Manages annotation markers injected into the browser page via Playwright.
  */
 export class BrowserAnnotationMarkers extends Disposable {
 
-	private _cdpGroupId: string | undefined;
 	private _injected = false;
 
 	constructor(
 		private readonly _browserId: string,
-		private readonly _cdpService: IBrowserViewCDPService,
+		private readonly _playwrightService: IPlaywrightService,
 		private readonly _logService: ILogService,
 	) {
 		super();
@@ -194,7 +193,7 @@ export class BrowserAnnotationMarkers extends Disposable {
 	 */
 	async updateMarkers(annotations: readonly IBrowserAnnotation[]): Promise<void> {
 		try {
-			await this._ensureCdpGroup();
+			await this._ensureTracked();
 			await this._ensureInjected();
 
 			const serialized = annotations.map(a => ({
@@ -205,7 +204,15 @@ export class BrowserAnnotationMarkers extends Disposable {
 				attributes: a.attributes,
 			}));
 
-			await this._evaluate(`window.__annotationMarkers?.update(${JSON.stringify(serialized)})`);
+			await this._playwrightService.invokeFunctionRaw(
+				this._browserId,
+				`async (page, annotations) => {
+					await page.evaluate((data) => {
+						window.__annotationMarkers?.update(data);
+					}, annotations);
+				}`,
+				serialized,
+			);
 		} catch (e) {
 			this._logService.warn('BrowserAnnotationMarkers: Failed to update markers', e);
 		}
@@ -217,7 +224,14 @@ export class BrowserAnnotationMarkers extends Disposable {
 	async clearMarkers(): Promise<void> {
 		try {
 			if (this._injected) {
-				await this._evaluate('window.__annotationMarkers?.clear()');
+				await this._playwrightService.invokeFunctionRaw(
+					this._browserId,
+					`async (page) => {
+						await page.evaluate(() => {
+							window.__annotationMarkers?.clear();
+						});
+					}`,
+				);
 			}
 		} catch (e) {
 			this._logService.warn('BrowserAnnotationMarkers: Failed to clear markers', e);
@@ -230,7 +244,14 @@ export class BrowserAnnotationMarkers extends Disposable {
 	async removeAll(): Promise<void> {
 		try {
 			if (this._injected) {
-				await this._evaluate('window.__annotationMarkers?.remove()');
+				await this._playwrightService.invokeFunctionRaw(
+					this._browserId,
+					`async (page) => {
+						await page.evaluate(() => {
+							window.__annotationMarkers?.remove();
+						});
+					}`,
+				);
 				this._injected = false;
 			}
 		} catch (e) {
@@ -245,42 +266,26 @@ export class BrowserAnnotationMarkers extends Disposable {
 		this._injected = false;
 	}
 
-	override dispose(): void {
-		if (this._cdpGroupId) {
-			this._cdpService.destroySessionGroup(this._cdpGroupId).catch(() => { });
-			this._cdpGroupId = undefined;
-		}
-		this._injected = false;
-		super.dispose();
-	}
-
-	private async _ensureCdpGroup(): Promise<void> {
-		if (!this._cdpGroupId) {
-			this._cdpGroupId = await this._cdpService.createSessionGroup(this._browserId);
+	private async _ensureTracked(): Promise<void> {
+		const isTracked = await this._playwrightService.isPageTracked(this._browserId);
+		if (!isTracked) {
+			await this._playwrightService.startTrackingPage(this._browserId);
 		}
 	}
 
 	private async _ensureInjected(): Promise<void> {
 		if (!this._injected) {
-			await this._evaluate(MARKER_INJECTION_SCRIPT);
+			await this._playwrightService.invokeFunctionRaw(
+				this._browserId,
+				`async (page, script) => {
+					await page.evaluate((s) => {
+						const fn = new Function(s);
+						fn();
+					}, script);
+				}`,
+				MARKER_INJECTION_SCRIPT,
+			);
 			this._injected = true;
 		}
-	}
-
-	private async _evaluate(expression: string): Promise<void> {
-		if (!this._cdpGroupId) {
-			return;
-		}
-
-		const id = Math.floor(Math.random() * 1e9);
-		await this._cdpService.sendCDPMessage(this._cdpGroupId, {
-			id,
-			method: 'Runtime.evaluate',
-			params: {
-				expression,
-				returnByValue: true,
-				awaitPromise: false,
-			},
-		});
 	}
 }
