@@ -269,10 +269,11 @@ const MARKER_INJECTION_SCRIPT = `
 			// Click marker to edit (notify VS Code)
 			marker.addEventListener('click', function(e) {
 				e.stopPropagation();
-				// If hover overlay is listening (annotation mode active), signal it
+				// If hover overlay is actively waiting (annotation mode), signal it
 				if (window.__annotationHover && window.__annotationHover._resolveMarkerEdit) {
-					window.__annotationHover._resolveMarkerEdit(annotation.index);
-					return;
+					if (window.__annotationHover._resolveMarkerEdit(annotation.index)) {
+						return;
+					}
 				}
 				if (_markerClickResolve) {
 					_markerClickResolve({ markerIndex: annotation.index });
@@ -811,14 +812,14 @@ delete window.__annotationHover;
 var editResolve = null;
 
 function _resolveMarkerEdit(markerIndex) {
+if (!clickResolve) return false;
 removePopup();
 if (highlight) highlight.classList.remove('vis');
 if (tooltip) tooltip.classList.remove('vis');
 active = false;
-if (clickResolve) {
 clickResolve({ comment: null, editMarkerIndex: markerIndex });
 clickResolve = null;
-}
+return true;
 }
 
 function findAnnotatedElement(data) {

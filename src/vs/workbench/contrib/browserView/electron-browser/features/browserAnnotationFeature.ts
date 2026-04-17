@@ -70,6 +70,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private readonly _annotationModeContext: IContextKey<boolean>;
 	private readonly _hasAnnotationsContext: IContextKey<boolean>;
 	private readonly _markers = this._register(new MutableDisposable<BrowserAnnotationMarkers>());
+	private _markersVisible = true;
 
 	// Floating toolbar DOM
 	private readonly _toolbarElement: HTMLElement;
@@ -78,6 +79,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private readonly _sendToChatBtn: HTMLButtonElement;
 	private readonly _manageBtn: HTMLButtonElement;
 	private readonly _clearBtn: HTMLButtonElement;
+	private readonly _hideBtn: HTMLButtonElement;
 
 	constructor(
 		editor: BrowserEditor,
@@ -128,6 +130,13 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._sendToChatBtn.disabled = true;
 		this._toolbarElement.appendChild(this._sendToChatBtn);
 		this._register(dom.addDisposableListener(this._sendToChatBtn, 'click', () => this.sendAnnotationsToChat()));
+
+		this._toolbarElement.appendChild(this._createSeparator());
+
+		this._hideBtn = this._createButton('codicon-eye-closed', localize('browser.annotateHide', "Hide Annotations"));
+		this._hideBtn.disabled = true;
+		this._toolbarElement.appendChild(this._hideBtn);
+		this._register(dom.addDisposableListener(this._hideBtn, 'click', () => this.toggleMarkersVisibility()));
 
 		this._clearBtn = this._createButton('codicon-trash', localize('browser.annotateClear', "Clear All"));
 		this._clearBtn.disabled = true;
