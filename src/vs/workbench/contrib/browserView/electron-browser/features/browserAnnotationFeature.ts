@@ -107,22 +107,22 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._toolbarElement.appendChild(this._countLabel);
 
 		this._manageBtn = this._createButton('codicon-list-ordered', localize('browser.annotateManage', "Manage Annotations"));
-		this._manageBtn.style.display = 'none';
+		this._manageBtn.disabled = true;
 		this._toolbarElement.appendChild(this._manageBtn);
 		this._register(addDisposableListener(this._manageBtn, 'click', () => this.manageAnnotations()));
 
 		this._copyBtn = this._createButton('codicon-copy', localize('browser.annotateCopy', "Copy Annotations"));
-		this._copyBtn.style.display = 'none';
+		this._copyBtn.disabled = true;
 		this._toolbarElement.appendChild(this._copyBtn);
 		this._register(addDisposableListener(this._copyBtn, 'click', () => this.copyAnnotations()));
 
 		this._sendToChatBtn = this._createButton('codicon-comment-discussion', localize('browser.annotateSendToChat', "Send to Chat"));
-		this._sendToChatBtn.style.display = 'none';
+		this._sendToChatBtn.disabled = true;
 		this._toolbarElement.appendChild(this._sendToChatBtn);
 		this._register(addDisposableListener(this._sendToChatBtn, 'click', () => this.sendAnnotationsToChat()));
 
 		this._clearBtn = this._createButton('codicon-trash', localize('browser.annotateClear', "Clear All"));
-		this._clearBtn.style.display = 'none';
+		this._clearBtn.disabled = true;
 		this._toolbarElement.appendChild(this._clearBtn);
 		this._register(addDisposableListener(this._clearBtn, 'click', () => this.clearAnnotations()));
 	}
@@ -583,14 +583,15 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._toolbarElement.classList.toggle('visible', hasModel);
 		this._toggleBtn.classList.toggle('active', this._annotationModeActive);
 
-		// Show/hide annotation-dependent buttons
-		const annotationDisplay = hasAnnotations ? '' : 'none';
-		this._countLabel.style.display = annotationDisplay;
+		// Update count
+		this._countLabel.style.display = hasAnnotations ? '' : 'none';
 		this._countLabel.textContent = `${this._annotations.length}`;
-		this._manageBtn.style.display = annotationDisplay;
-		this._copyBtn.style.display = annotationDisplay;
-		this._sendToChatBtn.style.display = annotationDisplay;
-		this._clearBtn.style.display = annotationDisplay;
+
+		// Disable (not hide) buttons when no annotations
+		this._manageBtn.disabled = !hasAnnotations;
+		this._copyBtn.disabled = !hasAnnotations;
+		this._sendToChatBtn.disabled = !hasAnnotations;
+		this._clearBtn.disabled = !hasAnnotations;
 	}
 
 	private _createButton(iconClass: string, title: string): HTMLButtonElement {

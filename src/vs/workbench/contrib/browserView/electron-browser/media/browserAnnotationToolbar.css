@@ -39,7 +39,7 @@
 	padding: 0;
 	outline: none !important;
 
-	&:hover {
+	&:hover:not(:disabled) {
 		background-color: var(--vscode-toolbar-hoverBackground);
 		color: var(--vscode-foreground);
 	}
@@ -51,6 +51,12 @@
 
 	&.active {
 		color: var(--vscode-textLink-foreground);
+		background-color: color-mix(in srgb, var(--vscode-textLink-foreground) 15%, transparent);
+	}
+
+	&:disabled {
+		opacity: 0.35;
+		cursor: default;
 	}
 
 	.codicon {
