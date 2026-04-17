@@ -627,6 +627,8 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 				this._toolbarElement.style.transform = 'none';
 			}
 
+			// Hide BrowserView during drag so toolbar stays visible
+			this.editor.model?.setVisible(false);
 			dragHandle.style.cursor = 'grabbing';
 
 			const onMouseMove = (e: MouseEvent) => {
@@ -636,15 +638,17 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 					return;
 				}
 				const tw = this._toolbarElement.offsetWidth;
-				const navbarHeight = 44; // Constrain to navbar area (above BrowserView)
+				const th = this._toolbarElement.offsetHeight;
 				const newLeft = Math.max(0, Math.min(e.clientX - parentRect.left - offsetX, parentRect.width - tw));
-				const newTop = Math.max(0, Math.min(e.clientY - parentRect.top - offsetY, navbarHeight));
+				const newTop = Math.max(0, Math.min(e.clientY - parentRect.top - offsetY, parentRect.height - th));
 				this._toolbarElement.style.left = newLeft + 'px';
 				this._toolbarElement.style.top = newTop + 'px';
 			};
 
 			const onMouseUp = () => {
 				dragHandle.style.cursor = '';
+				// Restore BrowserView visibility
+				this.editor.model?.setVisible(true);
 				win.document.removeEventListener('mousemove', onMouseMove);
 				win.document.removeEventListener('mouseup', onMouseUp);
 			};
