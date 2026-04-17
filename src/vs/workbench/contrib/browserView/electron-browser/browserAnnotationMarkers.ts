@@ -281,8 +281,8 @@ if (!dragRect) { dragRect = document.createElement('div'); dragRect.className = 
 }
 
 function onMouseMove(e) {
-if (!active || isDragging) return;
-if (mouseDownPos) { onDragMove(e); return; }
+if (!active && !isDragging) return;
+if (mouseDownPos || isDragging) { onDragMove(e); return; }
 if (isScrolling) { highlight.classList.remove('vis'); tooltip.classList.remove('vis'); return; }
 const el = deepElement(e.clientX, e.clientY);
 if (isSkip(el)) { highlight.classList.remove('vis'); tooltip.classList.remove('vis'); return; }
