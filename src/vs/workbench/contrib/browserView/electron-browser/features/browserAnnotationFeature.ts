@@ -436,10 +436,19 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	}
 
 	/**
-	 * Continuously select elements and prompt for comments until annotation mode is deactivated.
-	 * Each iteration: enter CDP inspect mode → wait for click → extract data → prompt comment → store.
+	 * Continuously select elements and collect annotations until mode is deactivated.
+	 * Uses injected in-page hover overlay + popup for the full interaction.
 	 */
 	private async _runAnnotationLoop(): Promise<void> {
+		const markers = this._markers.value;
+		if (!markers) {
+			this._stopAnnotationMode();
+			return;
+		}
+
+		// Activate the in-page hover overlay
+		await markers.activateHoverOverlay();
+
 		while (this._annotationModeActive) {
 			const model = this.editor.model;
 			if (!model) {
@@ -451,41 +460,27 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			this._currentCts = cts;
 
 			try {
-				// Wait for user to click an element (CDP Overlay.setInspectMode)
-				const elementData = await model.getElementData(cts.token);
+				// Wait for user to click element + submit comment via in-page popup
+				const result = await markers.waitForAnnotation(cts.token);
 
 				if (cts.token.isCancellationRequested || !this._annotationModeActive) {
 					break;
 				}
 
-				if (!elementData) {
-					continue;
-				}
-
-				// Prompt for comment
-				const comment = await this.quickInputService.input({
-					title: localize('browser.annotationComment', "Annotation Comment"),
-					placeHolder: localize('browser.annotationCommentPlaceholder', "What feedback do you have for this element?"),
-					validateInput: async (value) => {
-						if (!value.trim()) {
-							return localize('browser.annotationCommentRequired', "A comment is required");
-						}
-						return undefined;
-					}
-				});
-
-				if (!comment || !this._annotationModeActive) {
-					// User cancelled the input — stay in annotation mode, just skip this one
+				if (!result) {
+					// User cancelled the popup — stay in annotation mode
 					if (!this._annotationModeActive) {
 						break;
 					}
+					// Re-activate hover overlay for next selection
+					await markers.activateHoverOverlay();
 					continue;
 				}
 
 				// Create and store the annotation
 				const annotation = createBrowserAnnotation(
-					elementData,
-					comment,
+					result.elementData,
+					result.comment,
 					this._annotations.length + 1,
 					model.url,
 				);
@@ -496,7 +491,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 				this.logService.debug(`BrowserAnnotationFeature: Added annotation #${annotation.index} for ${annotation.displayName}`);
 
-				// Re-focus the browser for the next selection
+				// Re-focus the browser and re-activate hover for next selection
 				this.editor.ensureBrowserFocus();
 
 			} catch (error) {
@@ -511,6 +506,9 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 				}
 			}
 		}
+
+		// Deactivate hover overlay when exiting annotation mode
+		await markers.deactivateHoverOverlay();
 	}
 
 	private _syncMarkers(): void {
