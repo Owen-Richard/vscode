@@ -68,6 +68,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private readonly _annotationModeContext: IContextKey<boolean>;
 	private readonly _hasAnnotationsContext: IContextKey<boolean>;
 	private readonly _markers = this._register(new MutableDisposable<BrowserAnnotationMarkers>());
+	private _toolbarOverlapsBrowser = false;
 
 	// Floating toolbar DOM
 	private readonly _toolbarElement: HTMLElement;
@@ -647,20 +648,7 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 
 			const onMouseUp = () => {
 				dragHandle.style.cursor = '';
-
-				// Snap toolbar back above BrowserView if dragged into content area
-				const parentRect = this._toolbarElement.parentElement?.getBoundingClientRect();
-				const browserRect = this.editor.browserContainer.getBoundingClientRect();
-				if (parentRect) {
-					const maxTop = browserRect.top - parentRect.top - this._toolbarElement.offsetHeight - 2;
-					const currentTop = parseInt(this._toolbarElement.style.top) || 0;
-					if (currentTop > maxTop) {
-						this._toolbarElement.style.top = Math.max(0, maxTop) + 'px';
-					}
-				}
-
-				// Restore BrowserView visibility
-				this.editor.model?.setVisible(true);
+				this._updateBrowserVisibilityForToolbar();
 				win.document.removeEventListener('mousemove', onMouseMove);
 				win.document.removeEventListener('mouseup', onMouseUp);
 			};
@@ -670,6 +658,34 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		};
 
 		this._register(dom.addDisposableListener(dragHandle, 'mousedown', onMouseDown));
+	}
+
+	/**
+	 * Check if the toolbar overlaps the browser container area.
+	 * If it does, keep the BrowserView hidden so the toolbar stays visible.
+	 */
+	private _updateBrowserVisibilityForToolbar(): void {
+		const toolbarRect = this._toolbarElement.getBoundingClientRect();
+		const browserRect = this.editor.browserContainer.getBoundingClientRect();
+
+		const overlaps = !(
+			toolbarRect.right < browserRect.left ||
+			toolbarRect.left > browserRect.right ||
+			toolbarRect.bottom < browserRect.top ||
+			toolbarRect.top > browserRect.bottom
+		);
+
+		if (overlaps !== this._toolbarOverlapsBrowser) {
+			this._toolbarOverlapsBrowser = overlaps;
+		}
+
+		if (overlaps) {
+			// Keep BrowserView hidden — toolbar is over it
+			this.editor.model?.setVisible(false);
+		} else {
+			// Toolbar is above the browser area — restore BrowserView
+			this.editor.model?.setVisible(true);
+		}
 	}
 }
 
