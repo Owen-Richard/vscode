@@ -61,24 +61,30 @@ const MARKER_INJECTION_SCRIPT = `
 				display: flex;
 				align-items: center;
 				justify-content: center;
-				box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+				box-shadow: 0 2px 6px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(0,0,0,0.04);
 				pointer-events: auto;
-				cursor: default;
+				cursor: pointer;
 				transform: translate(-50%, -50%);
 				transition: transform 0.15s ease;
 				user-select: none;
 				-webkit-user-select: none;
+				z-index: 1;
 			}
 			.\${CONTAINER_ID}-marker:hover {
-				transform: translate(-50%, -50%) scale(1.2);
+				transform: translate(-50%, -50%) scale(1.1);
+				z-index: 2;
 			}
 			.\${CONTAINER_ID}-highlight {
 				position: absolute;
-				border: 2px solid #0078d4;
-				background: rgba(0, 120, 212, 0.08);
-				border-radius: 3px;
+				border: 2px solid rgba(0, 120, 212, 0.6);
+				background: rgba(0, 120, 212, 0.05);
+				border-radius: 4px;
 				pointer-events: none;
-				transition: opacity 0.2s ease;
+				opacity: 0;
+				transition: opacity 0.15s ease;
+			}
+			.\${CONTAINER_ID}-highlight.vis {
+				opacity: 1;
 			}
 		\`;
 		document.head.appendChild(style);
@@ -156,14 +162,14 @@ const MARKER_INJECTION_SCRIPT = `
 			const scrollX = window.scrollX;
 			const scrollY = window.scrollY;
 
-			// Highlight outline
-			const highlight = document.createElement('div');
-			highlight.className = CONTAINER_ID + '-highlight';
-			highlight.style.left = (rect.left + scrollX - 2) + 'px';
-			highlight.style.top = (rect.top + scrollY - 2) + 'px';
-			highlight.style.width = (rect.width + 4) + 'px';
-			highlight.style.height = (rect.height + 4) + 'px';
-			container.appendChild(highlight);
+			// Highlight outline (hidden by default, shown on marker hover)
+			const hl = document.createElement('div');
+			hl.className = CONTAINER_ID + '-highlight';
+			hl.style.left = (rect.left + scrollX - 2) + 'px';
+			hl.style.top = (rect.top + scrollY - 2) + 'px';
+			hl.style.width = (rect.width + 4) + 'px';
+			hl.style.height = (rect.height + 4) + 'px';
+			container.appendChild(hl);
 
 			// Numbered marker badge
 			const marker = document.createElement('div');
@@ -172,6 +178,11 @@ const MARKER_INJECTION_SCRIPT = `
 			marker.title = annotation.comment;
 			marker.style.left = (rect.right + scrollX) + 'px';
 			marker.style.top = (rect.top + scrollY) + 'px';
+
+			// Show outline on marker hover
+			marker.addEventListener('mouseenter', function() { hl.classList.add('vis'); });
+			marker.addEventListener('mouseleave', function() { hl.classList.remove('vis'); });
+
 			container.appendChild(marker);
 		}
 	}
