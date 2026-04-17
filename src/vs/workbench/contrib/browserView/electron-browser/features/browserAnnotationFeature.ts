@@ -34,6 +34,7 @@ import { IBrowserAnnotation, BrowserAnnotationDetailLevel, createBrowserAnnotati
 import { generateAnnotationOutput } from '../browserAnnotationOutput.js';
 import { BrowserAnnotationMarkers, IAnnotationThemeColors, IAnnotationEditRequest } from '../browserAnnotationMarkers.js';
 import { IPlaywrightService } from '../../../../../platform/browserView/common/playwrightService.js';
+import { IElementData } from '../../../../../platform/browserElements/common/browserElements.js';
 import { IThemeService } from '../../../../../platform/theme/common/themeService.js';
 import { editorBackground, foreground, descriptionForeground, inputBackground, inputBorder, focusBorder, buttonBackground, buttonForeground, editorWidgetBorder } from '../../../../../platform/theme/common/colorRegistry.js';
 
@@ -309,6 +310,45 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 			this._markers.value?.clearMarkers();
 		}
 		this._updateToolbarUI();
+	}
+
+	/**
+	 * Programmatically create an annotation from element data and a comment.
+	 * Used by the browser annotation tool for agent-driven annotations.
+	 */
+	async annotateBySelector(elementData: IElementData, comment: string): Promise<IBrowserAnnotation | undefined> {
+		const model = this.editor.model;
+		if (!model) {
+			return undefined;
+		}
+
+		// Capture element screenshot
+		let screenshotBase64: string | undefined;
+		try {
+			const screenshotBuffer = await model.captureScreenshot({
+				quality: 90,
+				pageRect: elementData.bounds,
+			});
+			screenshotBase64 = btoa(String.fromCharCode(...screenshotBuffer.buffer));
+		} catch {
+			// Screenshot may fail for off-screen elements
+		}
+
+		const annotation = createBrowserAnnotation(
+			elementData,
+			comment,
+			this._annotations.length + 1,
+			model.url,
+			screenshotBase64,
+		);
+		this._annotations.push(annotation);
+		this._markersVisible = true;
+		this._updateHasAnnotationsContext();
+		this._syncMarkers();
+		this._saveAnnotationsToStorage();
+
+		this.logService.debug(`BrowserAnnotationFeature: Agent added annotation #${annotation.index} for ${annotation.displayName}`);
+		return annotation;
 	}
 
 	/**

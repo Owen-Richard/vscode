@@ -25,6 +25,7 @@ import { ReadBrowserTool, ReadBrowserToolData } from './readBrowserTool.js';
 import { RunPlaywrightCodeTool, RunPlaywrightCodeToolData } from './runPlaywrightCodeTool.js';
 import { ScreenshotBrowserTool, ScreenshotBrowserToolData } from './screenshotBrowserTool.js';
 import { TypeBrowserTool, TypeBrowserToolData } from './typeBrowserTool.js';
+import { AnnotateBrowserTool, AnnotateBrowserToolData } from './annotateBrowserTool.js';
 
 class BrowserChatAgentToolsContribution extends Disposable implements IWorkbenchContribution {
 
@@ -87,6 +88,7 @@ class BrowserChatAgentToolsContribution extends Disposable implements IWorkbench
 		this._toolsStore.add(this.toolsService.registerTool(TypeBrowserToolData, this.instantiationService.createInstance(TypeBrowserTool)));
 		this._toolsStore.add(this.toolsService.registerTool(RunPlaywrightCodeToolData, this.instantiationService.createInstance(RunPlaywrightCodeTool)));
 		this._toolsStore.add(this.toolsService.registerTool(HandleDialogBrowserToolData, this.instantiationService.createInstance(HandleDialogBrowserTool)));
+		this._toolsStore.add(this.toolsService.registerTool(AnnotateBrowserToolData, this.instantiationService.createInstance(AnnotateBrowserTool)));
 
 		this._toolsStore.add(this._browserToolSet.addTool(OpenBrowserToolData));
 		this._toolsStore.add(this._browserToolSet.addTool(ReadBrowserToolData));
@@ -98,6 +100,7 @@ class BrowserChatAgentToolsContribution extends Disposable implements IWorkbench
 		this._toolsStore.add(this._browserToolSet.addTool(TypeBrowserToolData));
 		this._toolsStore.add(this._browserToolSet.addTool(RunPlaywrightCodeToolData));
 		this._toolsStore.add(this._browserToolSet.addTool(HandleDialogBrowserToolData));
+		this._toolsStore.add(this._browserToolSet.addTool(AnnotateBrowserToolData));
 
 		// Publish tracked browser pages as workspace context for chat requests
 		this.playwrightService.getTrackedPages().then(ids => {
