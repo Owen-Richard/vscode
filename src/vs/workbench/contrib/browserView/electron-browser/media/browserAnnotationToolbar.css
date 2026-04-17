@@ -72,16 +72,6 @@
 	flex-shrink: 0;
 }
 
-.browser-annotation-toolbar .browser-annotation-toolbar-count {
-	font-size: 11px;
-	font-weight: 500;
-	color: var(--vscode-descriptionForeground);
-	padding: 0 4px;
-	white-space: nowrap;
-	user-select: none;
-	-webkit-user-select: none;
-}
-
 .browser-annotation-toolbar .browser-annotation-toolbar-label {
 	font-size: 11px;
 	color: var(--vscode-descriptionForeground);

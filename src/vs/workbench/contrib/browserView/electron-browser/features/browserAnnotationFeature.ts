@@ -76,7 +76,6 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 	private readonly _sendToChatBtn: HTMLButtonElement;
 	private readonly _manageBtn: HTMLButtonElement;
 	private readonly _clearBtn: HTMLButtonElement;
-	private readonly _countLabel: HTMLElement;
 
 	constructor(
 		editor: BrowserEditor,
@@ -102,9 +101,6 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		this._register(addDisposableListener(this._toggleBtn, 'click', () => this.toggleAnnotationMode()));
 
 		this._toolbarElement.appendChild(this._createSeparator());
-		this._countLabel = $('.browser-annotation-toolbar-count');
-		this._countLabel.style.display = 'none';
-		this._toolbarElement.appendChild(this._countLabel);
 
 		this._manageBtn = this._createButton('codicon-list-ordered', localize('browser.annotateManage', "Manage Annotations"));
 		this._manageBtn.disabled = true;
@@ -582,10 +578,6 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 		// Always show the toolbar when a page is loaded
 		this._toolbarElement.classList.toggle('visible', hasModel);
 		this._toggleBtn.classList.toggle('active', this._annotationModeActive);
-
-		// Update count
-		this._countLabel.style.display = hasAnnotations ? '' : 'none';
-		this._countLabel.textContent = `${this._annotations.length}`;
 
 		// Disable (not hide) buttons when no annotations
 		this._manageBtn.disabled = !hasAnnotations;
