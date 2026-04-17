@@ -63,6 +63,12 @@ export interface IBrowserAnnotation {
 	/** Base64-encoded screenshot of the element (captured at annotation time). */
 	readonly screenshotBase64: string | undefined;
 
+	/** Text the user had selected when creating the annotation. */
+	readonly selectedText: string | undefined;
+
+	/** Whether this annotation covers multiple elements (group or area select). */
+	readonly isMultiSelect: boolean;
+
 	/** Timestamp when the annotation was created. */
 	readonly timestamp: number;
 }
@@ -76,6 +82,8 @@ export function createBrowserAnnotation(
 	index: number,
 	url: string,
 	screenshotBase64?: string,
+	selectedText?: string,
+	isMultiSelect?: boolean,
 ): IBrowserAnnotation {
 	const { displayNameShort, displayNameFull } = buildDisplayNames(elementData);
 
@@ -96,6 +104,8 @@ export function createBrowserAnnotation(
 		dimensions: elementData.dimensions,
 		innerText: elementData.innerText,
 		screenshotBase64,
+		selectedText,
+		isMultiSelect: isMultiSelect ?? false,
 		timestamp: Date.now(),
 	};
 }

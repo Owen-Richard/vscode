@@ -480,6 +480,8 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 					// Screenshot may fail for off-screen elements
 				}
 
+				const isMulti = result.mode === 'group' || result.mode === 'area';
+
 				// Create and store the annotation
 				const annotation = createBrowserAnnotation(
 					result.elementData,
@@ -487,6 +489,8 @@ export class BrowserAnnotationFeature extends BrowserEditorContribution {
 					this._annotations.length + 1,
 					model.url,
 					screenshotBase64,
+					result.selectedText,
+					isMulti,
 				);
 				this._annotations.push(annotation);
 				this._updateHasAnnotationsContext();
