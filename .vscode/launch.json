@@ -718,6 +718,7 @@
 	],
 	"compounds": [
 		{
+
 			"name": "VS Code",
 			"stopAll": true,
 			"configurations": [
